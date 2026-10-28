@@ -1,0 +1,16 @@
+# Sólo desarrollo local: la base. La app corre con `npm run dev`.
+services:
+  db:
+    image: postgres:18.6-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: restaurante
+      POSTGRES_PASSWORD: restaurante
+      POSTGRES_DB: restaurante
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - datos-postgres-dev:/var/lib/postgresql
+
+volumes:
+  datos-postgres-dev:

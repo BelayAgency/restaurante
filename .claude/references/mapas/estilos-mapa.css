@@ -1,0 +1,104 @@
+/* ---------------------------------------------------------------------------
+   Estilos del mapa (Leaflet + MapLibre) — van al globals.css del proyecto,
+   dentro de @layer components. Acompañan a capa-mapa.tsx.
+
+   Leaflet dibuja popups y controles con su blanco propio: acá se pisan con
+   los tokens para que el mapa acompañe el tema como cualquier otra
+   superficie.
+   --------------------------------------------------------------------------- */
+
+@layer components {
+  /*
+    Pin del mapa: la gota clásica de marcador, con la punta apoyada en la
+    coordenada exacta (un círculo la taparía). Un solo span la dibuja entera:
+    la gota es el ::before (un cuadrado con tres esquinas redondeadas, rotado
+    45°) y el punto blanco el ::after. La sombra va con drop-shadow y no
+    box-shadow para que siga la silueta, punta incluida.
+
+    Se usa con un divIcon de Leaflet:
+      divIcon({ className: '', html: '<span class="pin-mapa"></span>',
+                iconSize: [30, 40], iconAnchor: [15, 38], popupAnchor: [0, -36] })
+
+    Cada sistema define sus variantes de estado pisando --pin-color por
+    atributo, p. ej. `.pin-mapa[data-estado='inactivo'] { --pin-color: ... }`.
+  */
+  .pin-mapa {
+    --pin-color: var(--color-acento);
+    position: relative;
+    display: block;
+    width: 30px;
+    height: 40px;
+    transform-origin: 50% 95%;
+    transition: transform 150ms ease;
+    filter: drop-shadow(0 3px 3px rgb(0 0 0 / 0.35));
+  }
+
+  .pin-mapa:hover {
+    /* Crece desde la punta: el pin se agranda sin moverse del lugar. */
+    transform: scale(1.15);
+  }
+
+  .pin-mapa::before {
+    content: '';
+    position: absolute;
+    left: 1px;
+    top: 1px;
+    width: 28px;
+    height: 28px;
+    background-color: var(--pin-color);
+    border: 2px solid white;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+  }
+
+  .pin-mapa::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 15px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background-color: white;
+    transform: translate(-50%, -50%);
+  }
+
+  .leaflet-container {
+    font-family: var(--fuente-sans);
+    border-radius: var(--radius-tarjeta);
+    background-color: var(--color-superficie);
+  }
+
+  .leaflet-popup-content-wrapper,
+  .leaflet-popup-tip {
+    background-color: var(--color-elevada);
+    color: var(--color-tinta);
+    box-shadow: var(--sombra-flotante);
+  }
+
+  .leaflet-popup-content-wrapper {
+    border-radius: 0.875rem;
+  }
+
+  .leaflet-popup-content {
+    margin: 1rem 1.125rem;
+    font-family: var(--fuente-sans);
+    line-height: 1.5;
+  }
+
+  /* Leaflet le mete ~1.3em de margen a cada <p> del popup: la card usa su
+     propio espaciado y ese margen la desarma. */
+  .leaflet-popup-content p {
+    margin: 0;
+  }
+
+  .leaflet-container a.leaflet-popup-close-button {
+    color: var(--color-tinta-tenue);
+  }
+
+  .dark .leaflet-bar a {
+    background-color: var(--color-elevada);
+    color: var(--color-tinta);
+    border-color: var(--color-borde);
+  }
+}

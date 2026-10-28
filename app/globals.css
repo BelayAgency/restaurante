@@ -1,0 +1,1408 @@
+@import 'tailwindcss';
+
+/* Sin darkMode:'class' en JS: el variant se declara acá. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Sistema visual del panel.
+
+  Los tokens de color viven en :root/.dark como color completo (no como
+  tripleta) y se registran en @theme para que Tailwind genere las clases de
+  utilidad. La opacidad sobre un token (bg-acento/20) la resuelve Tailwind
+  solo, vía color-mix — ya no hace falta guardar la tripleta aparte para eso.
+  Donde el archivo compone una transparencia a mano (sombras, foco, selección)
+  se usa `color-mix(in srgb, var(--x) N%, transparent)` en vez de anidar rgb().
+
+  El acento (celeste, igual en claro y oscuro) se usa con
+  cuentagotas: acciones primarias y estados
+  activos. Nunca como fondo de superficies grandes.
+
+  Las tarjetas no llevan borde pintado: el contorno lo dibuja el propio
+  box-shadow. En claro es un hairline exterior; en oscuro, un inset de 1px.
+  Un borde real desplazaría el layout al cambiar de tema y se vería más duro
+  que este contorno, que se funde con la sombra difusa.
+*/
+
+@theme {
+  --color-lienzo: rgb(245 244 239); /* #F5F4EF — fondo de página */
+  --color-superficie: rgb(250 250 247); /* #FAFAF7 — tarjetas */
+  --color-elevada: rgb(255 255 255);
+  --color-perilla: rgb(255 255 255);
+  --color-borde: rgb(232 229 220);
+  --color-borde-fuerte: rgb(214 210 199);
+
+  --color-tinta: rgb(45 42 38); /* #2D2A26 — texto principal */
+  --color-tinta-suave: rgb(92 86 76);
+  --color-tinta-tenue: rgb(138 131 119);
+
+  --color-acento: rgb(122 162 224); /* #7AA2E0 */
+  --color-acento-hover: rgb(107 143 197); /* #6B8FC5 */
+  --color-acento-tenue: rgb(226 235 248); /* #E2EBF8 */
+
+  --color-exito: rgb(63 125 83);
+  --color-exito-tenue: rgb(227 239 229);
+  --color-alerta: rgb(176 118 31);
+  --color-alerta-tenue: rgb(246 236 217);
+  --color-error: rgb(180 69 58);
+  --color-error-tenue: rgb(246 226 223);
+
+  /* Rellenos de control: ya son color completo con su propio alpha en varios
+     casos. Registrados igual para tener la clase de utilidad (bg-fill-…), pero
+     sin esperar que se les aplique un modificador de opacidad encima. */
+  --color-fill-secundario: var(--fill-secundario);
+  --color-fill-secundario-hover: var(--fill-secundario-hover);
+  --color-fill-fantasma-hover: var(--fill-fantasma-hover);
+
+  --font-sans: var(--fuente-sans);
+  --font-mono: var(--fuente-mono);
+
+  /* Base 15px: jerarquía por peso y tamaño, no por color. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.1rem;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.2rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-base--letter-spacing: -0.005em;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.6rem;
+  --text-lg--letter-spacing: -0.01em;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-xl--letter-spacing: -0.015em;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-3xl--letter-spacing: -0.025em;
+
+  --radius: 0.5rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  /* Radio de las tarjetas. Los controles se quedan en 8-12px: si el botón
+     acompañara el radio del contenedor, la tarjeta dejaría de leerse como
+     superficie y pasaría a leerse como una píldora gigante. */
+  --radius-tarjeta: 20px;
+
+  /* Sombras muy sutiles en lugar de bordes duros. Las compuestas
+     (tarjeta/campo/foco/flotante) se arman en :root/.dark porque cambian de
+     FORMA —no sólo de color— entre claro y oscuro: hairline por fuera, inset
+     por dentro. */
+  --shadow-sutil: 0 1px 2px color-mix(in srgb, var(--sombra) 5%, transparent),
+    0 1px 3px color-mix(in srgb, var(--sombra) 4%, transparent);
+  --shadow-tarjeta: var(--sombra-tarjeta);
+  --shadow-tarjeta-hover: var(--sombra-tarjeta-hover);
+  --shadow-tarjeta-foco: var(--sombra-tarjeta-foco);
+  --shadow-flotante: var(--sombra-flotante);
+  --shadow-campo: var(--sombra-campo);
+  --shadow-foco: var(--sombra-foco);
+
+  --animate-aparecer: aparecer 180ms cubic-bezier(0.2, 0, 0.13, 1);
+  --animate-pulso: pulso 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulso {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@layer base {
+  :root {
+    --sombra: rgb(45 42 38);
+
+    /* Sombra difusa + hairline exterior. El contorno se aclara en hover y se
+       marca más al enfocar algo adentro de la tarjeta. */
+    --sombra-tarjeta: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035),
+      0 0 0 1px color-mix(in srgb, var(--color-tinta) 15%, transparent);
+    --sombra-tarjeta-hover: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035),
+      0 0 0 1px color-mix(in srgb, var(--color-tinta) 30%, transparent);
+    --sombra-tarjeta-foco: 0 0.25rem 1.25rem rgb(0 0 0 / 0.075),
+      0 0 0 1px color-mix(in srgb, var(--color-tinta) 30%, transparent);
+    --sombra-flotante: 0 4px 12px -2px color-mix(in srgb, var(--sombra) 8%, transparent),
+      0 12px 32px -8px color-mix(in srgb, var(--sombra) 12%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--color-tinta) 12%, transparent);
+    --sombra-campo-error: 0 0 0 1px var(--color-error);
+    /* --- Controles ------------------------------------------------------
+       Los rellenos se declaran como color completo (no como tripleta): nunca
+       se les aplica opacidad de Tailwind y varios ya llevan alpha propio. */
+    --fill-secundario: rgb(255 255 255);
+    --fill-secundario-hover: rgb(245 244 239);
+    --fill-fantasma-hover: rgb(45 42 38 / 0.06);
+    --sombra-campo: 0 1px 2px rgb(0 0 0 / 0.04), 0 0 0 1px color-mix(in srgb, var(--color-tinta) 12%, transparent);
+    --sombra-foco: 0 0 0 2px var(--color-lienzo), 0 0 0 4px color-mix(in srgb, var(--color-acento) 55%, transparent);
+
+    /* --- Filas de la navegación ---------------------------------------- */
+    --fila-alto: 2.25rem;
+    --fila-px: 0.625rem;
+    --fila-gap: 0.625rem;
+    --fila-fuente: 0.875rem;
+    /* El renglón chico de una fila (el mail bajo el nombre en la tarjeta de usuario). */
+    --fila-fuente-secundaria: 0.75rem;
+    /* Radio moderado, no píldora: con 36px de alto, un 9999px convierte cada
+       fila en una cápsula y la lista pierde el ritmo vertical. */
+    --fila-radio: 0.625rem;
+    /* Control embebido en una fila (la acción que aparece al pasar por encima). */
+    --fila-ctl: 1.5rem;
+    --fila-hover: rgb(45 42 38 / 0.05);
+    --fila-activa: rgb(45 42 38 / 0.09);
+
+    /* --- Isla de acciones (POS) ----------------------------------------
+       48px: el mínimo que se acierta con el dedo sin mirar. Todos los botones
+       miden lo mismo porque el cajero apunta de memoria, y un blanco que
+       cambia de tamaño lo obliga a mirar. */
+    --isla-boton: 3rem;
+    /* Lo que la vista reserva abajo (padding-bottom) para que la isla no tape
+       el final del contenido. */
+    --isla-hueco: 5.5rem;
+
+    --fuente-sans: var(--fuente-interfaz), ui-sans-serif, system-ui, sans-serif;
+    --fuente-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Segoe UI Mono', monospace;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    /* Fondo neutro #151515. Las superficies suben en pasos cortos: sobre un
+       fondo tan oscuro, saltos grandes de luminancia se leen como cajas
+       flotando en vez de como una jerarquía. */
+    --color-lienzo: rgb(21 21 21); /* #151515 */
+    --color-superficie: rgb(29 29 29); /* #1D1D1D */
+    --color-elevada: rgb(38 38 38); /* #262626 */
+    --color-borde: rgb(48 48 48); /* #303030 */
+    --color-borde-fuerte: rgb(66 66 66); /* #424242 */
+
+    /* El texto conserva la calidez de la marca aunque el fondo sea neutro:
+       un blanco puro sobre #151515 vibra y cansa en sesiones largas. */
+    --color-tinta: rgb(237 234 227);
+    --color-tinta-suave: rgb(176 172 165);
+    --color-tinta-tenue: rgb(133 130 124);
+
+    /* Mismo celeste que en claro — a diferencia del verde anterior, acá no
+       hace falta un tono distinto por tema: #7AA2E0 ya tiene contraste de
+       sobra como texto/borde sobre el fondo oscuro. Sólo cambian hover y
+       tenue, derivados del mismo valor. */
+    --color-acento: rgb(122 162 224); /* #7AA2E0 */
+    --color-acento-hover: rgb(138 173 228); /* #8AADE4 */
+    --color-acento-tenue: rgb(37 49 67); /* #253143 */
+
+    --color-exito: rgb(127 191 146);
+    --color-exito-tenue: rgb(34 48 38);
+    --color-alerta: rgb(220 168 78);
+    --color-alerta-tenue: rgb(51 41 26);
+    --color-error: rgb(229 130 117);
+    --color-error-tenue: rgb(51 33 31);
+
+    --sombra: rgb(0 0 0);
+
+    /* En oscuro el contorno va por dentro: un hairline exterior sobre #151515
+       no se distingue del fondo, mientras que el inset separa la superficie. */
+    --sombra-tarjeta: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035),
+      inset 0 0 0 1px var(--color-borde);
+    --sombra-tarjeta-hover: 0 0.25rem 1.25rem rgb(0 0 0 / 0.035),
+      inset 0 0 0 1px var(--color-borde-fuerte);
+    --sombra-tarjeta-foco: 0 0.25rem 1.25rem rgb(0 0 0 / 0.075),
+      inset 0 0 0 1px var(--color-borde-fuerte);
+    --sombra-flotante: 0 4px 12px -2px rgb(0 0 0 / 0.4), 0 12px 32px -8px rgb(0 0 0 / 0.5),
+      inset 0 0 0 1px var(--color-borde);
+    --sombra-campo-error: inset 0 0 0 1px var(--color-error);
+    --fill-secundario: rgb(38 38 38);
+    --fill-secundario-hover: rgb(48 48 48);
+    --fill-fantasma-hover: rgb(255 255 255 / 0.07);
+    /* Sin drop shadow: sobre #151515 no se ve. El contorno va por dentro. */
+    --sombra-campo: inset 0 0 0 1px var(--color-borde);
+    --sombra-foco: 0 0 0 2px var(--color-lienzo), 0 0 0 4px color-mix(in srgb, var(--color-acento) 55%, transparent);
+
+    --fila-hover: rgb(255 255 255 / 0.055);
+    --fila-activa: rgb(255 255 255 / 0.1);
+
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: var(--color-borde);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-lienzo);
+    color: var(--color-tinta);
+    font-family: var(--fuente-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-acento) 22%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-acento);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Barras de scroll discretas: el panel tiene tablas largas y logs. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-tinta-tenue) 30%, transparent);
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--color-tinta-tenue) 50%, transparent);
+  }
+}
+
+@layer components {
+  .tarjeta {
+    @apply relative z-[1] rounded-tarjeta border border-transparent bg-superficie;
+    box-shadow: var(--sombra-tarjeta);
+    transition:
+      background-color 200ms,
+      border-color 200ms,
+      box-shadow 200ms,
+      opacity 200ms;
+  }
+
+  .tarjeta:hover {
+    box-shadow: var(--sombra-tarjeta-hover);
+  }
+
+  .tarjeta:focus-within {
+    box-shadow: var(--sombra-tarjeta-foco);
+  }
+
+  .campo {
+    @apply w-full rounded-xl border border-transparent bg-elevada px-3 py-2 text-base text-tinta
+      transition placeholder:text-tinta-tenue focus:outline-none;
+    box-shadow: var(--sombra-tarjeta);
+  }
+
+  .campo:hover {
+    box-shadow: var(--sombra-tarjeta-hover);
+  }
+
+  .campo:focus {
+    box-shadow: var(--sombra-tarjeta-foco), 0 0 0 2px color-mix(in srgb, var(--color-acento) 35%, transparent);
+  }
+
+  /* Gana sobre :hover y :focus: si el dato está mal, el contorno rojo manda. */
+  .campo-error,
+  .campo-error:hover {
+    box-shadow: var(--sombra-campo-error);
+  }
+
+  .campo-error:focus {
+    box-shadow: var(--sombra-campo-error), 0 0 0 2px color-mix(in srgb, var(--color-error) 30%, transparent);
+  }
+
+  /*
+    Fila de navegación.
+
+    Es un contenedor con dos hijos posibles: el destino (`.fila-nav-principal`,
+    que ocupa todo el ancho libre) y una acción opcional al final
+    (`.fila-nav-accion`), que sólo aparece al pasar por encima o al enfocar algo
+    adentro. Van como hermanos y no anidados porque un elemento interactivo
+    dentro de un <a> es HTML inválido y rompe la navegación por teclado.
+
+    El color del icono lo decide la fila, no cada ítem: así un estado nuevo se
+    agrega en un solo lugar y no hay forma de que un ítem quede desincronizado.
+  */
+  .fila-nav {
+    @apply relative flex w-full shrink-0 items-center rounded-[var(--fila-radio)]
+      text-left text-tinta-suave transition-colors duration-150;
+    height: var(--fila-alto);
+    padding-inline: var(--fila-px);
+    gap: var(--fila-gap);
+    font-size: var(--fila-fuente);
+  }
+
+  /* Con acción, el padding derecho lo aporta el control para que quede
+     ópticamente centrado contra el borde de la píldora. */
+  .fila-nav[data-con-accion='true'] {
+    padding-right: calc((var(--fila-alto) - var(--fila-ctl)) / 2);
+    gap: 0.25rem;
+  }
+
+  .fila-nav:hover,
+  .fila-nav:focus-within {
+    background-color: var(--fila-hover);
+    color: var(--color-tinta);
+  }
+
+  .fila-nav[data-activa='true'] {
+    background-color: var(--fila-activa);
+    color: var(--color-tinta);
+  }
+
+  .fila-nav-icono {
+    @apply flex shrink-0 items-center transition-colors duration-150;
+    color: var(--color-tinta-tenue);
+  }
+
+  .fila-nav:hover .fila-nav-icono,
+  .fila-nav:focus-within .fila-nav-icono,
+  .fila-nav[data-activa='true'] .fila-nav-icono {
+    color: var(--color-tinta);
+  }
+
+  .fila-nav-principal {
+    @apply flex h-full min-w-0 flex-1 items-center rounded-[var(--fila-radio)]
+      border-none bg-transparent text-left outline-none;
+    gap: var(--fila-gap);
+  }
+
+  /* Foco propio en vez del outline global: sobre una píldora, un outline
+     exterior se corta contra la fila de al lado. */
+  .fila-nav-principal:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px var(--color-acento),
+      0 0 6px 0 color-mix(in srgb, var(--color-acento) 20%, transparent);
+  }
+
+  .fila-nav-accion {
+    @apply pointer-events-none flex shrink-0 items-center justify-center rounded-md
+      text-tinta-tenue opacity-0 outline-none transition-[opacity,color,background-color] duration-150;
+    width: var(--fila-ctl);
+    height: var(--fila-ctl);
+  }
+
+  .fila-nav:hover .fila-nav-accion,
+  .fila-nav:focus-within .fila-nav-accion {
+    @apply pointer-events-auto opacity-100;
+  }
+
+  .fila-nav-accion:hover {
+    background-color: var(--fill-fantasma-hover);
+    color: var(--color-tinta);
+  }
+
+  /* Llegando por teclado tiene que verse aunque el mouse no esté encima. */
+  .fila-nav-accion:focus-visible {
+    @apply pointer-events-auto opacity-100;
+    box-shadow: inset 0 0 0 1px var(--color-acento);
+  }
+
+  /*
+    Modal.
+
+    El <dialog> es la caja; el panel de adentro maneja el layout en columna
+    para que el cuerpo scrollee y el pie quede fijo. Sin esa separación, un
+    formulario largo empuja los botones fuera de la pantalla.
+  */
+  .modal {
+    @apply w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-tarjeta border-none
+      bg-superficie p-0 text-tinta;
+    /* El preflight de Tailwind resetea el margen de TODOS los elementos,
+       dialog incluido: sin reponer el margin auto, el modal queda pegado
+       arriba a la izquierda en vez de centrado. Y el text-align se hereda
+       hasta en el top layer: abierto desde una celda alineada a la derecha,
+       todo el modal se alinearía con ella. */
+    margin: auto;
+    text-align: left;
+    max-height: min(88vh, 52rem);
+    box-shadow: var(--sombra-flotante);
+  }
+
+  /* Abajo de 900px el modal deja de ser una ventana centrada y pasa a hoja:
+     pegado a los tres bordes salvo el de arriba, ancho completo. `margin-top:
+     auto` con `margin-bottom: 0` es lo que lo empuja al piso —el `margin: auto`
+     de arriba centra en las cuatro direcciones, achicar solo dos lo desarma—.
+     La altura NO es fija: crece con el contenido y el 95vh es el techo, no el
+     tamaño por defecto, para no dejar un cartel de dos líneas con medio
+     viewport de aire abajo. */
+  /* Corte propio, NO el 900px del resto del sistema. La hoja inferior es un
+     gesto de teléfono —el pulgar arrastra desde el borde de abajo—, no de
+     tablet: ahí sobra ancho para un modal centrado como en escritorio, y
+     clavarlo contra el piso sólo porque el sidebar ya colapsó sería
+     copiar un corte que responde a otra pregunta ("¿entra la navegación
+     lateral?") para resolver esta ("¿el gesto es de una mano en el borde?"). */
+  @media (max-width: 639px) {
+    .modal {
+      @apply w-full max-w-none rounded-b-none;
+      margin: auto 0 0 0;
+      max-height: 95vh;
+    }
+  }
+
+  .modal::backdrop {
+    background-color: rgb(0 0 0 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .modal[open] {
+    animation: modal-entrar 160ms cubic-bezier(0.2, 0, 0.13, 1);
+  }
+
+  .modal[open]::backdrop {
+    animation: backdrop-entrar 160ms ease-out;
+  }
+
+  .modal-panel {
+    @apply flex max-h-[inherit] flex-col;
+  }
+
+  .modal-encabezado {
+    @apply flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-5;
+  }
+
+  /* Scroll del contenido, no del modal entero. */
+  /*
+   * El `pb-5` es del cuerpo y no del pie: el pie tiene su propio `pt-4`, pero
+   * ese aire queda del lado de afuera de la línea divisoria. Sin esto, el
+   * último elemento del formulario termina pegado al borde.
+   */
+  .modal-cuerpo {
+    @apply min-h-0 flex-1 overflow-y-auto px-6 pb-5;
+  }
+
+  .modal-pie {
+    @apply flex shrink-0 items-center justify-end gap-3 px-6 pb-5 pt-4;
+    border-top: 1px solid var(--color-borde);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal[open],
+    .modal[open]::backdrop {
+      animation: none;
+    }
+  }
+
+  /* — avisos efímeros —
+     El navegador le da estilos propios a `[popover]`: lo centra, le pone borde,
+     fondo opaco y `overflow:auto`. Hay que desarmar todo eso antes de poder
+     posicionarlo. A cambio se gana el top layer, que es lo único que deja un
+     aviso por encima de un `<dialog>` abierto con `showModal()`.
+
+     La capa no recibe clicks: si los recibiera, el rectángulo vacío de arriba
+     de los avisos bloquearía media pantalla. Cada aviso los vuelve a activar. */
+  .toast-capa {
+    position: fixed;
+    inset: auto 0 0 auto;
+    width: min(420px, calc(100vw - 2rem));
+    margin: 0 1rem 1rem 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .toast-capa:not(:popover-open) {
+    display: none;
+  }
+
+  .toast-entra {
+    animation: toast-entrar 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes toast-entrar {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* La salida: toast.tsx marca 'saliendo' y espera esta animación antes de
+     desmontar (misma duración que SALIDA_MS). El forwards lo deja invisible
+     durante esa espera. */
+  .toast-sale {
+    animation: toast-salir 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  @keyframes toast-salir {
+    to {
+      opacity: 0;
+      transform: translateX(16px) scale(0.98);
+    }
+  }
+
+  /* El ícono entra con un pop recién cuando la tarjeta terminó de aparecer:
+     dos movimientos a la vez se pisan y el pop no se aprecia. El overshoot
+     está en la curva (rebota pasando el 1), no en keyframes, y el backwards
+     lo mantiene en escala 0 durante el delay. */
+  .toast-icono {
+    animation: icono-pop 350ms cubic-bezier(0.34, 1.56, 0.64, 1) 400ms backwards;
+  }
+  @keyframes icono-pop {
+    from {
+      scale: 0;
+    }
+    to {
+      scale: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast-entra {
+      animation: none;
+    }
+    /* Sin movimiento pero invisible al toque: el desmontaje espera igual. */
+    .toast-sale {
+      animation-duration: 1ms;
+    }
+    .toast-icono {
+      animation: none;
+    }
+  }
+
+  /*
+   * El tilde de "salió bien".
+   *
+   * El círculo entra de golpe y el trazo se dibuja después: primero se ve que
+   * algo pasó y recién ahí qué. Al revés —todo junto— se lee como un ícono
+   * estático que ya estaba ahí, y justamente lo que hay que comunicar es que
+   * acaba de ocurrir.
+   */
+  .exito-circulo {
+    animation: exito-aparecer 260ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  }
+  @keyframes exito-aparecer {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .exito-trazo {
+    /* Largo aproximado del tilde; de sobra para que arranque invisible. */
+    stroke-dasharray: 36;
+    stroke-dashoffset: 36;
+    animation: exito-dibujar 340ms 200ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  @keyframes exito-dibujar {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .exito-circulo,
+    .exito-trazo {
+      animation: none;
+    }
+    .exito-trazo {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .etiqueta-campo {
+    @apply mb-1.5 block text-sm font-medium text-tinta-suave;
+  }
+
+  /*
+    Selector.
+
+    Reemplaza al `<select>` nativo en todos los casos. El desplegable del nativo
+    lo dibuja el sistema operativo, fuera del documento: no hay CSS que lo
+    alcance, así que sale gris de Windows en un panel que no tiene nada gris.
+    Sólo se puede estilar la caja cerrada, y entonces el control miente: parece
+    nuestro hasta que se abre.
+
+    La contrapartida hay que pagarla. Al dejar el nativo se pierde la rueda del
+    sistema en el celular, que se opera de un pulgar, así que la opción usa el
+    mismo alto que una fila de navegación (`--fila-alto`) y no uno menor.
+
+    El disparador reusa `.campo`: es el mismo control desde afuera, y si algún
+    día cambia el foco o el contorno de los inputs, esto lo acompaña solo.
+  */
+  .selector {
+    @apply relative;
+  }
+
+  .selector-disparador {
+    @apply flex w-full cursor-pointer items-center justify-between gap-2 text-left;
+  }
+
+  .selector[data-abierto='true'] .selector-chevron {
+    @apply rotate-180;
+  }
+
+  .selector-chevron {
+    @apply shrink-0 text-tinta-tenue transition-transform duration-150;
+  }
+
+  .selector-valor {
+    @apply min-w-0 truncate;
+  }
+
+  .selector-valor[data-vacio='true'] {
+    @apply text-tinta-tenue;
+  }
+
+  /* La posición (top/left/width) la pone selector.tsx por style inline,
+     calculada contra el disparador — acá sólo el aspecto. `fixed` y no
+     `absolute` es lo que lo deja escapar del `overflow-hidden` de un modal
+     que lo contenga; ver el comentario en el componente. */
+  .selector-menu {
+    @apply fixed z-30 overflow-hidden rounded-[0.875rem] bg-elevada animate-aparecer;
+    box-shadow: var(--sombra-flotante);
+  }
+
+  /* Fijo arriba: filtrando una lista larga, si el buscador se fuera con el
+     scroll no se vería qué se escribió. */
+  .selector-buscar {
+    @apply flex items-center gap-2 border-b border-borde px-3 py-2.5 text-tinta-tenue;
+  }
+
+  .selector-buscar input {
+    @apply w-full border-0 bg-transparent p-0 text-sm text-tinta outline-none
+      placeholder:text-tinta-tenue;
+  }
+
+  /* Alto máximo: un desplegable que crece hasta tapar la pantalla deja de ser
+     un control y pasa a ser una página. */
+  .selector-lista {
+    @apply max-h-56 overflow-y-auto p-1;
+  }
+
+  .selector-opcion {
+    @apply flex w-full items-center gap-2.5 rounded-lg border-0 bg-transparent px-2.5
+      text-left text-sm leading-5 text-tinta transition-colors duration-100;
+    /* Alto fijo, no derivado del contenido: sin esto, una opción con texto
+       secundario adentro crece un píxel y la lista baila. */
+    height: var(--fila-alto);
+  }
+
+  /* Un solo resaltado para el mouse y para el teclado: dos estados distintos
+     compiten y no se entiende cuál se va a elegir al apretar Enter. */
+  .selector-opcion:hover,
+  .selector-opcion[data-marcada='true'] {
+    background-color: var(--fila-hover);
+  }
+
+  .selector-opcion[aria-selected='true'] {
+    @apply font-medium;
+  }
+
+  .selector-tilde {
+    @apply ml-auto shrink-0 text-acento opacity-0;
+  }
+
+  .selector-opcion[aria-selected='true'] .selector-tilde {
+    @apply opacity-100;
+  }
+
+  .selector-secundario {
+    @apply text-xs text-tinta-tenue;
+  }
+
+  .selector-vacio {
+    @apply px-3 py-5 text-center text-sm text-tinta-tenue;
+  }
+
+  /* La acción de crear va SEPARADA de la lista: si fuera una opción más, el
+     filtro la escondería justo cuando más se necesita — cuando lo que se buscó
+     no existe y por eso se quiere crear. */
+  .selector-pie {
+    @apply border-t border-borde p-1;
+  }
+
+  .selector-pie .selector-opcion {
+    @apply font-medium text-acento;
+  }
+
+  /*
+    Isla — la barra de acciones de un punto de venta.
+
+    Una píldora que flota sobre el contenido en vez de pegarse a un borde: en
+    una pantalla de mostrador el pulgar llega al centro de abajo mucho antes
+    que a una esquina. Sólo iconos, en botones redondos de 48px —el mínimo que
+    se acierta con el dedo sin mirar—; el nombre de cada acción vive en
+    `aria-label`, que es lo que lee el lector de pantalla.
+
+    El atajo sale por FUERA de la isla, en un chip que aparece arriba del botón
+    al pasar por encima o al enfocar, y todos juntos mientras se mantiene Alt:
+    de a uno se descubre una acción, todos juntos se aprende el teclado. Va
+    afuera y no adentro porque adentro de un botón de 48px, al lado de un icono
+    de 22, no hay lugar para nada más sin apretar las dos cosas.
+
+    El acento se lo lleva un solo botón: el que cierra la venta. Si hay dos
+    primarios, ninguno lo es.
+  */
+  .isla {
+    @apply fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1
+      rounded-full p-1.5;
+    background-color: color-mix(in srgb, var(--color-superficie) 88%, transparent);
+    box-shadow: var(--sombra-flotante);
+    backdrop-filter: blur(12px);
+  }
+
+  .isla-item {
+    @apply relative flex shrink-0 cursor-pointer items-center justify-center rounded-full
+      border-0 bg-transparent p-0 text-tinta-suave outline-none
+      transition-[background-color,color] duration-150;
+    width: var(--isla-boton);
+    height: var(--isla-boton);
+  }
+
+  .isla-item:hover,
+  .isla-item:focus-visible {
+    background-color: var(--fill-fantasma-hover);
+    color: var(--color-tinta);
+  }
+
+  /* Foco por dentro: sobre un botón pegado al de al lado, un outline exterior
+     se corta contra el vecino. Mismo criterio que `.fila-nav`. */
+  .isla-item:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--color-acento);
+  }
+
+  .isla-item[data-activa='true'] {
+    background-color: var(--color-acento-tenue);
+    color: var(--color-acento);
+  }
+
+  .isla-item[data-primaria='true'] {
+    @apply bg-acento text-white;
+  }
+
+  .isla-item[data-primaria='true']:hover,
+  .isla-item[data-primaria='true']:focus-visible {
+    @apply bg-acento-hover text-white;
+  }
+
+  .isla-item:disabled {
+    @apply pointer-events-none opacity-40;
+  }
+
+  /* El tamaño del icono lo fija la isla y no quien la usa: sin nombre debajo,
+     el icono es toda la acción, y uno de 20 al lado de uno de 24 se lee como
+     un error. */
+  .isla-icono {
+    @apply pointer-events-none flex items-center justify-center;
+  }
+
+  .isla-icono svg {
+    @apply h-[1.375rem] w-[1.375rem];
+  }
+
+  /* Separa la navegación de la acción que cierra la venta. Un gap más grande
+     no alcanza: lo que hay que decir es que eso de la derecha es otra cosa, no
+     el último de la lista. */
+  .isla-sep {
+    @apply mx-0.5 my-3 w-px shrink-0 self-stretch bg-borde;
+  }
+
+  /* Afuera de la isla, arriba del botón. Lleva superficie y sombra propias
+     porque ya no se apoya sobre el fondo de la isla: sin eso queda un texto
+     suelto flotando sobre el contenido. */
+  .isla-atajo {
+    @apply pointer-events-none absolute bottom-[calc(100%+1rem)] left-1/2 rounded-md
+      border-0 px-1.5 py-1 font-mono text-[0.6875rem] font-medium leading-none
+      opacity-0 transition-[opacity,transform] duration-150;
+    /* Como está impresa en el teclado. La detección sigue siendo insensible
+       a mayúsculas — esto es sólo presentación. */
+    text-transform: uppercase;
+    background-color: var(--color-elevada);
+    color: var(--color-tinta);
+    box-shadow: var(--sombra-flotante);
+    transform: translate(-50%, 4px);
+  }
+
+  /* En una pantalla táctil no hay teclado que aprender, y el :hover queda
+     pegado después de tocar: ahí el atajo no se muestra nunca. */
+  @media (hover: hover) {
+    .isla-item:hover .isla-atajo {
+      @apply opacity-100;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  .isla-item:focus-visible .isla-atajo,
+  .isla[data-atajos='true'] .isla-atajo {
+    @apply opacity-100;
+    transform: translate(-50%, 0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .isla-item,
+    .isla-atajo {
+      transition: none;
+    }
+  }
+
+  /*
+    Acceso — login y recuperación de contraseña.
+
+    Es la única pantalla que alguien ve antes de estar adentro del sistema, y
+    por eso es la única que lleva el color de marca como superficie grande. Es
+    una excepción deliberada a la regla del acento —adentro vuelve a ser sólo
+    la acción primaria— y no se extiende a ninguna otra vista.
+
+    Dos columnas en pantallas anchas: la marca a la izquierda, el formulario a
+    la derecha, con el nombre del sistema empujado al piso del panel para que
+    sea lo último que se lee antes de pasar los ojos al primer campo. En
+    pantallas angostas el panel de marca se oculta del todo: solo queda el
+    formulario, a pantalla completa.
+
+    Las cuatro pantallas del flujo —entrar, pedir el código, ponerlo, elegir la
+    contraseña— comparten este mismo esqueleto. Lo único que cambia
+    es lo que va adentro de `.acceso-caja`.
+  */
+  /* La consulta mira el ANCHO DEL CONTENEDOR y no el del viewport. No es un
+     purismo: con un viewport de 980px y la pantalla metida en un contenedor de
+     676 —una vista previa, un iframe— el media query daba dos columnas y el
+     formulario quedaba en 148px de ancho. El breakpoint tiene que responder al
+     lugar donde la pantalla efectivamente entra. */
+  .acceso {
+    @apply w-full;
+    container-type: inline-size;
+  }
+
+  .acceso-grilla {
+    @apply grid;
+    /* Piso para ventanas bajas, no techo: el acceso ocupa la pantalla entera
+       y sin el max() el panel de marca termina a media altura. */
+    min-height: max(44rem, 100dvh);
+  }
+
+  @container (min-width: 900px) {
+    .acceso-grilla {
+      grid-template-columns: 26rem 1fr;
+    }
+  }
+
+  .acceso-marca {
+    @apply hidden flex-col bg-acento p-8 text-white sm:p-14;
+  }
+
+  @container (min-width: 900px) {
+    .acceso-marca {
+      @apply flex;
+    }
+  }
+
+  /* Si el color de marca del cliente es claro, el blanco no se lee. No es un
+     caso raro: hay marcas amarillas y verde lima. */
+  .acceso[data-marca='clara'] .acceso-marca {
+    @apply text-tinta;
+  }
+
+  .acceso-logo {
+    @apply text-lg font-medium;
+  }
+
+  .acceso-marca-pie {
+    @apply mt-auto flex flex-col gap-3 pt-12;
+  }
+
+  .acceso-rotulo {
+    @apply text-xs font-medium uppercase;
+    letter-spacing: 0.18em;
+    opacity: 0.7;
+  }
+
+  .acceso-sistema {
+    @apply text-3xl font-medium;
+    line-height: 1.1;
+  }
+
+  .acceso-barra {
+    @apply block h-1 w-24 rounded-full bg-current;
+    opacity: 0.45;
+  }
+
+  .acceso-credito {
+    @apply text-sm;
+    opacity: 0.72;
+  }
+
+  .acceso-forma {
+    @apply flex items-center justify-center bg-lienzo p-8 sm:p-14;
+  }
+
+  .acceso-caja {
+    @apply flex w-full max-w-[25rem] flex-col gap-6;
+  }
+
+  .acceso-titulo {
+    @apply text-2xl font-medium text-tinta;
+  }
+
+  .acceso-bajada {
+    @apply text-sm text-tinta-tenue;
+  }
+
+  .acceso-campos {
+    @apply flex flex-col gap-4;
+  }
+
+  /* El "¿La olvidaste?" va arriba, en la línea de la etiqueta, y no debajo del
+     campo: abajo queda pegado al lugar donde aparece el mensaje de error. */
+  .acceso-etiqueta-fila {
+    @apply mb-1.5 flex items-baseline justify-between gap-3;
+  }
+
+  .acceso-etiqueta-fila .etiqueta-campo {
+    @apply mb-0;
+  }
+
+  .acceso-link {
+    @apply text-xs font-medium text-acento no-underline hover:underline;
+  }
+
+  .acceso-nota {
+    @apply text-xs text-tinta-tenue;
+  }
+
+  .acceso-pie {
+    @apply flex items-center gap-1.5 pt-2 text-xs text-tinta-tenue opacity-75;
+  }
+
+  /*
+    Requisitos de la contraseña.
+
+    Se muestran desde el principio y no cuando ya se falló. Inventar una
+    contraseña, mandarla, y que recién ahí te digan que faltaba un símbolo es
+    la forma más rápida de que alguien la termine anotando en un papel.
+  */
+  .requisitos {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .requisito {
+    @apply flex items-center gap-2 text-xs text-tinta-tenue transition-colors duration-150;
+  }
+
+  .requisito-marca {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors duration-150;
+    background-color: var(--color-borde);
+  }
+
+  .requisito-marca svg {
+    @apply h-2.5 w-2.5 opacity-0 transition-opacity duration-150;
+  }
+
+  .requisito[data-cumplido='true'] {
+    @apply text-tinta-suave;
+  }
+
+  .requisito[data-cumplido='true'] .requisito-marca {
+    @apply bg-exito text-white;
+  }
+
+  .requisito[data-cumplido='true'] .requisito-marca svg {
+    @apply opacity-100;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .requisito,
+    .requisito-marca,
+    .requisito-marca svg {
+      transition: none;
+    }
+  }
+
+  /*
+    Marco — el mueble del panel.
+
+    Navegación fija a la izquierda, contenido a la derecha. Abajo de 900px la
+    navegación NO se esconde y listo: se muda a un cajón que se abre desde una
+    barra superior. Esconderla sin reemplazo —que es lo que se hace casi
+    siempre— deja al sistema sin ninguna forma de navegar en el celular, y el
+    día que alguien lo abre desde el teléfono no puede salir de la primera
+    pantalla.
+
+    900px es el mismo corte que usa `.acceso`. Un solo número en todo el
+    sistema: dos breakpoints parecidos terminan desalineados y nadie se acuerda
+    de cuál era cuál.
+
+    Acá va media query y no container query, al revés que en `.acceso`: el
+    marco ES la página, así que el viewport sí es su contenedor.
+  */
+  .marco {
+    @apply flex min-h-screen;
+  }
+
+  .marco-lateral {
+    @apply hidden w-60 shrink-0 border-r;
+    border-color: color-mix(in srgb, var(--color-borde) 60%, transparent);
+  }
+
+  /* Queda quieta mientras el contenido scrollea. */
+  .marco-fijo {
+    @apply sticky top-0 h-screen;
+  }
+
+  .marco-principal {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .marco-contenido {
+    @apply mx-auto flex w-full max-w-5xl flex-col gap-10 px-5 py-8 sm:px-8 sm:py-10;
+  }
+
+  /* En el celular, lo único que queda arriba: el disparador del cajón y el
+     nombre del sistema, que sin la columna izquierda no está en ningún lado. */
+  .barra-movil {
+    @apply sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4;
+    border-color: color-mix(in srgb, var(--color-borde) 60%, transparent);
+    background-color: color-mix(in srgb, var(--color-lienzo) 85%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  @media (min-width: 900px) {
+    .marco-lateral {
+      @apply block;
+    }
+    .barra-movil {
+      @apply hidden;
+    }
+  }
+
+  /*
+    Cajón de navegación.
+
+    Es un `<dialog>` y no un div con z-index, por el mismo motivo que el modal:
+    el foco atrapado, el cierre con Escape, el `inert` sobre el resto de la
+    página y el `::backdrop` vienen dados. Un cajón casero casi siempre queda
+    con el foco suelto detrás, navegando cosas que no se ven.
+  */
+  .cajon {
+    @apply fixed inset-y-0 left-0 m-0 h-full max-h-none w-64 max-w-[85vw]
+      border-0 bg-superficie p-0 text-tinta;
+  }
+
+  .cajon::backdrop {
+    background-color: color-mix(in srgb, var(--sombra) 45%, transparent);
+  }
+
+  .cajon[open] {
+    animation: cajon-entrar 200ms cubic-bezier(0.2, 0, 0.13, 1);
+  }
+
+  .cajon[open]::backdrop {
+    animation: backdrop-entrar 160ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cajon[open],
+    .cajon[open]::backdrop {
+      animation: none;
+    }
+  }
+
+  /*
+    Tamaños de teléfono.
+
+    Los 36 px de la fila y los 24 px del control están pensados para un
+    puntero. Con el dedo, lo que vive en la barra y en el cajón sube: barra de
+    56 px, disparadores de 44 px, filas de 48 px con letra de 16 px e íconos
+    de 20 px. Va por las mismas variables de la fila, así la tarjeta de
+    usuario, su menú y el selector de tema acompañan sin reglas propias, y un
+    ítem nuevo que use `.fila-nav` sale del tamaño correcto solo.
+  */
+  .barra-movil .fila-nav-accion {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .barra-movil .fila-nav-accion svg,
+  .cajon .fila-nav-accion svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .cajon {
+    --fila-alto: 3rem;
+    --fila-px: 0.875rem;
+    --fila-gap: 0.875rem;
+    --fila-fuente: 1rem;
+    --fila-fuente-secundaria: 0.875rem;
+    --fila-ctl: 2.75rem;
+    --tema-relleno: 0.625rem;
+  }
+
+  .cajon .fila-nav-icono svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* El relleno va por variable y no por utilidad: una utilidad en el TSX le
+     ganaría a cualquier regla del cajón. */
+  .selector-tema button {
+    padding: var(--tema-relleno, 0.375rem);
+  }
+
+  .cajon .selector-tema svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  /*
+    Tarjeta de usuario, al pie de la navegación.
+
+    El menú se abre HACIA ARRIBA porque la tarjeta vive abajo de todo: hacia
+    abajo se saldría de la pantalla. Va antes que el disparador en el DOM y
+    posicionado por CSS, así el orden de tabulación entra al menú recién
+    después de abrirlo.
+  */
+  .caja-usuario {
+    @apply relative;
+    padding-inline: var(--fila-px);
+  }
+
+  .tarjeta-usuario {
+    @apply flex w-full cursor-pointer items-center gap-2.5 border-0 bg-transparent p-2
+      text-left transition-colors duration-150;
+    border-radius: var(--fila-radio);
+  }
+
+  .tarjeta-usuario:hover,
+  .tarjeta-usuario[aria-expanded='true'] {
+    background-color: var(--fila-hover);
+  }
+
+  .menu-usuario {
+    @apply absolute bottom-[calc(100%+6px)] z-20 overflow-hidden rounded-xl bg-superficie p-1;
+    left: var(--fila-px);
+    right: var(--fila-px);
+    box-shadow: var(--sombra-flotante);
+  }
+
+  .menu-usuario button {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent
+      py-2 text-left text-tinta transition-colors duration-150;
+    /* Mismas medidas que la fila: en el cajón del teléfono crecen con ella. */
+    min-height: var(--fila-alto);
+    padding-inline: var(--fila-px);
+    font-size: var(--fila-fuente);
+  }
+
+  .menu-usuario button:hover {
+    background-color: var(--fila-hover);
+  }
+
+  .menu-usuario button svg {
+    @apply text-tinta-tenue;
+  }
+
+  /*
+    Modal de configuración.
+
+    Va aparte de `.modal` y no como una variante suya: aquél es una caja en
+    columna —encabezado, cuerpo, pie— y éste son dos columnas donde la nav queda
+    fija y sólo scrollea el panel. Forzar los dos layouts en las mismas clases
+    deja un montón de condicionales para no compartir casi nada.
+  */
+  .config {
+    @apply flex w-[calc(100vw-2rem)] max-w-[940px] overflow-hidden rounded-tarjeta
+      border-none bg-superficie p-0 text-tinta;
+    /* El preflight resetea el margen de todo, dialog incluido: sin reponerlo
+       queda pegado arriba a la izquierda. Y el text-align se hereda hasta en el
+       top layer. */
+    margin: auto;
+    text-align: left;
+    height: calc(100dvh - 3rem);
+    max-height: 44rem;
+    box-shadow: var(--sombra-flotante);
+  }
+
+  .config::backdrop {
+    background-color: rgb(0 0 0 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .config[open] {
+    animation: modal-entrar 160ms cubic-bezier(0.2, 0, 0.13, 1);
+  }
+
+  .config[open]::backdrop {
+    animation: backdrop-entrar 160ms ease-out;
+  }
+
+  .config-nav {
+    @apply flex w-52 shrink-0 flex-col bg-lienzo px-2.5 py-4;
+    border-right: 1px solid var(--color-borde);
+  }
+
+  .config-nav h2 {
+    @apply mb-3 px-2.5 text-[0.9375rem] font-semibold;
+  }
+
+  .config-nav ul {
+    @apply flex list-none flex-col gap-0.5 p-0;
+  }
+
+  .config-nav button {
+    @apply flex w-full cursor-pointer items-center rounded-[var(--fila-radio)] border-0
+      bg-transparent text-left text-sm text-tinta-suave transition-colors duration-150;
+    height: var(--fila-alto);
+    padding-inline: var(--fila-px);
+    gap: var(--fila-gap);
+  }
+
+  .config-nav button:hover {
+    background-color: var(--fila-hover);
+    @apply text-tinta;
+  }
+
+  .config-nav button[aria-current] {
+    background-color: var(--fila-activa);
+    @apply font-medium text-tinta;
+  }
+
+  .config-panel {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
+  }
+
+  .config-cabecera {
+    @apply flex shrink-0 items-center justify-between gap-4 pb-2.5 pl-7 pr-4 pt-4;
+  }
+
+  .config-cabecera h3 {
+    @apply text-[1.0625rem] font-semibold;
+  }
+
+  /* Scroll del panel, no del modal entero: la nav queda fija. */
+  .config-cuerpo {
+    @apply min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-1;
+  }
+
+  .bloque-config {
+    @apply mb-7 last:mb-0;
+  }
+
+  .bloque-config h4 {
+    @apply text-[0.9375rem] font-semibold;
+  }
+
+  .bloque-config-bajada {
+    @apply mb-1.5 text-xs text-tinta-tenue;
+  }
+
+  .fila-config {
+    @apply flex items-center justify-between gap-6 py-3.5;
+  }
+
+  /* El divisor va arriba de cada fila menos la primera: así no queda una línea
+     suelta colgando abajo del último. */
+  .fila-config + .fila-config {
+    box-shadow: inset 0 1px 0 var(--color-borde);
+  }
+
+  .fila-config-izq {
+    @apply min-w-0 flex-1;
+  }
+
+  .fila-config-rotulo {
+    @apply text-[0.9375rem];
+  }
+
+  .fila-config-desc {
+    @apply mt-0.5 text-xs text-tinta-tenue;
+  }
+
+  .fila-config-der {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
+  /*
+    En el teléfono la nav pasa a una fila arriba y los controles bajan debajo de
+    su rótulo. Al lado, un campo de texto quedaría de dos centímetros.
+
+    900px es el mismo corte que usan `.acceso` y `.marco`. Un solo número.
+  */
+  @media (max-width: 899px) {
+    .config {
+      @apply flex-col rounded-tarjeta;
+      width: calc(100vw - 1rem);
+      height: calc(100dvh - 1rem);
+    }
+
+    .config-nav {
+      @apply w-full flex-row items-center gap-1 border-r-0 p-2.5;
+      border-bottom: 1px solid var(--color-borde);
+    }
+
+    .config-nav h2 {
+      @apply hidden;
+    }
+
+    .config-nav ul {
+      @apply flex-row gap-1;
+    }
+
+    .config-cabecera {
+      @apply pb-2 pl-4 pr-3 pt-3;
+    }
+
+    .config-cuerpo {
+      @apply px-4 pb-5;
+    }
+
+    .fila-config {
+      @apply flex-col items-start gap-2.5;
+    }
+
+    .fila-config-der {
+      @apply w-full;
+    }
+  }
+}
+
+@keyframes modal-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes backdrop-entrar {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cajon-entrar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}

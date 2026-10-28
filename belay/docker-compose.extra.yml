@@ -1,0 +1,33 @@
+# Lo propio de este sistema; el servicio `app` y la red `belay` los define
+# belay/docker-compose.yml, que mantiene el panel.
+services:
+  app:
+    networks: [belay, interna]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18.6-alpine3.24
+    restart: unless-stopped
+    # POSTGRES_USER, POSTGRES_PASSWORD y POSTGRES_DB, junto a DATABASE_URL.
+    env_file: .env.app
+    volumes:
+      - datos-postgres:/var/lib/postgresql
+    networks: [interna]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  # Nunca la red compartida: ahí la vería cualquier container de otro cliente.
+  interna:
+    internal: true
+
+volumes:
+  datos-postgres:
