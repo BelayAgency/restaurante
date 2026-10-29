@@ -25,6 +25,11 @@ export interface Item {
   enviadoEn: string | null;
   /** Se cargó o se tocó después de una precuenta. */
   trasPrecuenta: boolean;
+  /** Anulado con autorización: sigue a la vista, no se cobra. */
+  anulado: boolean;
+  cortesia: boolean;
+  /** El precio de la carta si después se cambió en la cuenta. */
+  precioOriginalCentavos: number | null;
 }
 
 export interface Precuenta {
@@ -42,6 +47,15 @@ export interface Cobro {
   pagos: DatosDe<'cobro_registrado'>['pagos'];
   cobradoEn: string;
   cobradoPor: string;
+}
+
+export interface Descuento {
+  id: string;
+  porcentaje: number | null;
+  montoCentavos: number;
+  aplicadoEn: string;
+  aplicadoPor: string;
+  autorizadoPor: string | null;
 }
 
 export interface Cuenta {
@@ -65,6 +79,7 @@ export interface Cuenta {
   pidioCuenta: boolean;
   precuentas: Precuenta[];
   cambiosTrasPrecuenta: number;
+  descuentos: Descuento[];
 }
 
 export interface Anomalia {
@@ -80,7 +95,8 @@ export interface EstadoSalon {
   anomalias: Anomalia[];
 }
 
-export function importeItem(item: Pick<Item, 'precioCentavos' | 'cantidad' | 'modificadores'>): number {
+export function importeItem(item: Pick<Item, 'precioCentavos' | 'cantidad' | 'modificadores'> & Partial<Pick<Item, 'anulado' | 'cortesia'>>): number {
+  if (item.anulado || item.cortesia) return 0;
   const unitario = item.precioCentavos + item.modificadores.reduce((suma, m) => suma + m.precioCentavos, 0);
   return unitario * item.cantidad;
 }
@@ -88,7 +104,8 @@ export function importeItem(item: Pick<Item, 'precioCentavos' | 'cantidad' | 'mo
 export function totalCuenta(cuenta: Cuenta): number {
   let total = 0;
   for (const item of cuenta.items.values()) total += importeItem(item);
-  return total;
+  const descuentos = cuenta.descuentos.reduce((s, d) => s + d.montoCentavos, 0);
+  return Math.max(0, total - descuentos);
 }
 
 function marcarSiHayPrecuenta(cuenta: Cuenta) {
@@ -134,6 +151,7 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
         cobros: [],
         pagadoCentavos: 0,
         itemsPagados: new Set(),
+        descuentos: [],
       });
       continue;
     }
@@ -143,7 +161,8 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
       anotar(evento, 'La cuenta no existe');
       continue;
     }
-    if (cuenta.estado !== 'abierta') {
+    // Reabrir y corregir un cobro son justamente lo que se hace con una cuenta cerrada.
+    if (cuenta.estado !== 'abierta' && !(cuenta.estado === 'cerrada' && (evento.tipo === 'cuenta_reabierta' || evento.tipo === 'cobro_corregido'))) {
       anotar(evento, cuenta.estado === 'cerrada' ? 'La cuenta ya estaba cerrada' : 'La cuenta ya se había unido a otra');
       continue;
     }
@@ -167,6 +186,9 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
           cargadoEn: evento.creadoEnDispositivo,
           enviadoEn: null,
           trasPrecuenta: cuenta.precuentas.length > 0,
+          anulado: false,
+          cortesia: false,
+          precioOriginalCentavos: null,
         });
         cuenta.pidioCuenta = false;
         marcarSiHayPrecuenta(cuenta);
@@ -255,6 +277,51 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
         if (saldo !== 0) anotar(evento, `Se cerró con un saldo de ${saldo} centavos`);
         cuenta.estado = 'cerrada';
         cuenta.cerradaEn = evento.creadoEnDispositivo;
+        break;
+      }
+      case 'item_anulado':
+      case 'item_cortesia':
+      case 'precio_modificado': {
+        const item = cuenta.items.get(evento.datos.itemId);
+        if (!item) {
+          anotar(evento, 'El ítem no está en la cuenta');
+          break;
+        }
+        if (evento.tipo === 'item_anulado') item.anulado = true;
+        else if (evento.tipo === 'item_cortesia') item.cortesia = true;
+        else {
+          item.precioOriginalCentavos ??= item.precioCentavos;
+          item.precioCentavos = evento.datos.precioCentavos;
+        }
+        marcarSiHayPrecuenta(cuenta);
+        break;
+      }
+      case 'descuento_aplicado':
+        if (cuenta.descuentos.some((d) => d.id === evento.datos.descuentoId)) break;
+        cuenta.descuentos.push({
+          id: evento.datos.descuentoId,
+          porcentaje: evento.datos.porcentaje,
+          montoCentavos: evento.datos.montoCentavos,
+          aplicadoEn: evento.creadoEnDispositivo,
+          aplicadoPor: evento.operadorId,
+          autorizadoPor: evento.autorizadoPorId,
+        });
+        marcarSiHayPrecuenta(cuenta);
+        break;
+      case 'cuenta_reabierta':
+        if (cuenta.estado === 'cerrada') {
+          cuenta.estado = 'abierta';
+          cuenta.cerradaEn = null;
+        }
+        break;
+      case 'cobro_corregido': {
+        const cobro = cuenta.cobros.find((c) => c.id === evento.datos.cobroId);
+        const suma = evento.datos.pagos.reduce((s, p) => s + p.montoCentavos, 0);
+        if (!cobro || suma !== cobro.consumoCentavos + cobro.propinaCentavos) {
+          anotar(evento, 'La corrección no coincide con el cobro');
+          break;
+        }
+        cobro.pagos = evento.datos.pagos;
         break;
       }
       case 'precuenta_emitida':

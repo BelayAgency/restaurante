@@ -1,3 +1,4 @@
+import type { MotivoAutorizacion, ReglasAutorizacion } from './autorizaciones';
 import type { Rol } from './roles';
 
 /**
@@ -90,6 +91,8 @@ export interface Catalogo {
   productos: ProductoCatalogo[];
   grupos: GrupoCatalogo[];
   medios: MedioPago[];
+  motivos: MotivoAutorizacion[];
+  reglas: Partial<ReglasAutorizacion>;
 }
 
 export const CATALOGO_VACIO: Catalogo = {
@@ -101,4 +104,6 @@ export const CATALOGO_VACIO: Catalogo = {
   productos: [],
   grupos: [],
   medios: [],
+  motivos: [],
+  reglas: {},
 };

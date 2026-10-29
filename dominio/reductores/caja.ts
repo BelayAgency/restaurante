@@ -50,7 +50,7 @@ export interface EstadoCaja {
 export function reducirCaja(eventos: Iterable<EventoNuevo>): EstadoCaja {
   const turnos = new Map<string, Turno>();
   const cobrosHuerfanos: string[] = [];
-  const cobrosVistos = new Set<string>();
+  const cobrosVistos = new Map<string, { turnoId: string; pagos: Pago[] }>();
 
   for (const evento of eventos) {
     switch (evento.tipo) {
@@ -95,7 +95,7 @@ export function reducirCaja(eventos: Iterable<EventoNuevo>): EstadoCaja {
       case 'cobro_registrado': {
         const d = evento.datos;
         if (cobrosVistos.has(d.cobroId)) break;
-        cobrosVistos.add(d.cobroId);
+        cobrosVistos.set(d.cobroId, { turnoId: d.turnoId, pagos: d.pagos });
         const turno = turnos.get(d.turnoId);
         if (!turno || turno.cerradoEn) {
           cobrosHuerfanos.push(d.cobroId);
@@ -109,6 +109,24 @@ export function reducirCaja(eventos: Iterable<EventoNuevo>): EstadoCaja {
           actual.montoCentavos += p.montoCentavos;
           turno.porMedio.set(p.medioId, actual);
         }
+        break;
+      }
+      case 'cobro_corregido': {
+        // El medio cambia en el turno del cobro original: lo que entró por
+        // tarjeta y se corrige a efectivo cambia lo esperado en la caja.
+        const original = cobrosVistos.get(evento.datos.cobroId);
+        const turno = original ? turnos.get(original.turnoId) : undefined;
+        if (!original || !turno) break;
+        const suma = (pagos: Pago[]) => pagos.reduce((s, p) => s + p.montoCentavos, 0);
+        if (suma(original.pagos) !== suma(evento.datos.pagos)) break;
+        for (const [signo, pagos] of [[-1, original.pagos], [1, evento.datos.pagos]] as const) {
+          for (const p of pagos) {
+            const actual = turno.porMedio.get(p.medioId) ?? { nombre: p.nombre, efectivo: p.efectivo, montoCentavos: 0 };
+            actual.montoCentavos += signo * p.montoCentavos;
+            turno.porMedio.set(p.medioId, actual);
+          }
+        }
+        original.pagos = evento.datos.pagos;
         break;
       }
     }

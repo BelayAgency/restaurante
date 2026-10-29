@@ -21,4 +21,10 @@ export const NOMBRE_EVENTO: Record<TipoEvento, string> = {
   turno_cerrado: 'Cierre de caja',
   cobro_registrado: 'Cobro',
   cuenta_cerrada: 'Cuenta cerrada',
+  item_anulado: 'Ítem anulado',
+  item_cortesia: 'Cortesía',
+  precio_modificado: 'Precio cambiado',
+  descuento_aplicado: 'Descuento',
+  cuenta_reabierta: 'Cuenta reabierta',
+  cobro_corregido: 'Medio de pago corregido',
 };

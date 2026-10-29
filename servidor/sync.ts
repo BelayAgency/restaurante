@@ -1,7 +1,9 @@
 import 'server-only';
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { db } from '@/db/cliente';
-import { dispositivos, elementosPlano, eventos, mediosPago, modificadores, preciosProducto, productos, usuarios } from '@/db/esquema';
+import { dispositivos, elementosPlano, eventos, mediosPago, modificadores, motivosAutorizacion, preciosProducto, productos, reglasAutorizacion, usuarios } from '@/db/esquema';
+import { ACCIONES_AUTORIZABLES, autorizacionRequerida, esAccionAutorizable, puedeAutorizar, type AccionAutorizable, type ReglasAutorizacion } from '@/dominio/autorizaciones';
+import { reducirSalon, type Cuenta } from '@/dominio/reductores/salon';
 import { definicion, type EventoConfirmado, type EventoNuevo } from '@/dominio/eventos';
 import { puede } from '@/dominio/permisos';
 import { esRol, type Rol } from '@/dominio/roles';
@@ -29,6 +31,8 @@ interface Referencias {
   modificadores: Map<string, number>;
   mesas: Set<string>;
   medios: Set<string>;
+  motivos: Map<string, AccionAutorizable>;
+  reglas: Partial<ReglasAutorizacion>;
 }
 
 /** Todo lo que el lote nombra, traído de una vez y no evento por evento. */
@@ -43,6 +47,7 @@ async function referenciasDe(lote: EventoNuevo[]): Promise<Referencias> {
     if (e.tipo === 'cobro_registrado') for (const p of e.datos.pagos) idsMedios.add(p.medioId);
     if (e.tipo === 'turno_cerrado') for (const p of e.datos.declarado) idsMedios.add(p.medioId);
     idsUsuarios.add(e.operadorId);
+    if (e.autorizadoPorId) idsUsuarios.add(e.autorizadoPorId);
     if (e.tipo === 'cuenta_abierta') {
       idsUsuarios.add(e.datos.mozoId);
       if (e.datos.mesaId) idsMesas.add(e.datos.mesaId);
@@ -56,7 +61,7 @@ async function referenciasDe(lote: EventoNuevo[]): Promise<Referencias> {
     }
   }
   const lista = <T,>(s: Set<T>) => [...s];
-  const [filasUsuarios, filasPrecios, filasProductos, filasModificadores, filasMesas, filasMedios] = await Promise.all([
+  const [filasUsuarios, filasPrecios, filasProductos, filasModificadores, filasMesas, filasMedios, filasMotivos, filasReglas] = await Promise.all([
     idsUsuarios.size ? db.select({ id: usuarios.id, rol: usuarios.rol, activo: usuarios.activo }).from(usuarios).where(inArray(usuarios.id, lista(idsUsuarios))) : [],
     idsPrecios.size ? db.select().from(preciosProducto).where(inArray(preciosProducto.id, lista(idsPrecios))) : [],
     idsProductos.size ? db.select({ id: productos.id, estacionId: productos.estacionId }).from(productos).where(inArray(productos.id, lista(idsProductos))) : [],
@@ -65,6 +70,8 @@ async function referenciasDe(lote: EventoNuevo[]): Promise<Referencias> {
       ? db.select({ id: elementosPlano.id }).from(elementosPlano).where(and(inArray(elementosPlano.id, lista(idsMesas)), eq(elementosPlano.tipo, 'mesa')))
       : [],
     idsMedios.size ? db.select({ id: mediosPago.id }).from(mediosPago).where(inArray(mediosPago.id, lista(idsMedios))) : [],
+    db.select({ id: motivosAutorizacion.id, accion: motivosAutorizacion.accion }).from(motivosAutorizacion),
+    db.select().from(reglasAutorizacion),
   ]);
   return {
     usuarios: new Map(filasUsuarios.filter((u) => esRol(u.rol)).map((u) => [u.id, { rol: u.rol as Rol, activo: u.activo }])),
@@ -73,6 +80,8 @@ async function referenciasDe(lote: EventoNuevo[]): Promise<Referencias> {
     modificadores: new Map(filasModificadores.map((m) => [m.id, m.precioCentavos])),
     mesas: new Set(filasMesas.map((m) => m.id)),
     medios: new Set(filasMedios.map((m) => m.id)),
+    motivos: new Map(filasMotivos.filter((m) => esAccionAutorizable(m.accion)).map((m) => [m.id, m.accion as AccionAutorizable])),
+    reglas: Object.fromEntries(filasReglas.filter((r) => esAccionAutorizable(r.accion)).map((r) => [r.accion, r.roles.filter(esRol)])),
   };
 }
 
@@ -125,6 +134,49 @@ function motivoDeRechazo(evento: EventoNuevo, ref: Referencias): string | null {
 }
 
 /**
+ * Si el evento necesitaba autorización, que la traiga: alguien activo, con
+ * un rol que autoriza esa acción según las reglas, y un motivo de esa acción.
+ * El PIN se verificó en el dispositivo; acá se verifica quién y por qué.
+ */
+function motivoDeAutorizacion(evento: EventoNuevo, cuenta: Cuenta | undefined, ref: Referencias): string | null {
+  const accion = autorizacionRequerida(evento, cuenta);
+  if (!accion) return null;
+  const falta = `Falta autorización: ${ACCIONES_AUTORIZABLES[accion].toLowerCase()}`;
+  if (!evento.autorizadoPorId || !evento.motivoId) return falta;
+  const autorizador = ref.usuarios.get(evento.autorizadoPorId);
+  if (!autorizador?.activo) return 'Quien autorizó no existe o está desactivado';
+  if (!puedeAutorizar(autorizador.rol, accion, ref.reglas)) return 'Quien autorizó no puede autorizar esta acción';
+  if (ref.motivos.get(evento.motivoId) !== accion) return 'El motivo no corresponde a la acción';
+  return null;
+}
+
+/**
+ * Los eventos ya aceptados de las cuentas que nombra el lote (y de las que se
+ * les unieron), para saber, por ejemplo, si había una precuenta.
+ */
+async function historiaDeCuentas(lote: EventoNuevo[]): Promise<Map<string, EventoNuevo[]>> {
+  const ids = new Set(lote.filter((e) => definicion(e.tipo).agregado === 'cuenta').map((e) => e.agregadoId));
+  const historia = new Map<string, EventoNuevo[]>();
+  if (!ids.size) return historia;
+  const filas = await db
+    .select()
+    .from(eventos)
+    .where(and(eq(eventos.agregadoTipo, 'cuenta'), eq(eventos.resultado, 'aceptado'), inArray(eventos.agregadoId, [...ids])))
+    .orderBy(asc(eventos.secuencia));
+  for (const f of filas) {
+    const evento = { ...f, creadoEnDispositivo: f.creadoEnDispositivo.toISOString() } as unknown as EventoNuevo;
+    historia.set(f.agregadoId, [...(historia.get(f.agregadoId) ?? []), evento]);
+  }
+  return historia;
+}
+
+function cuentaSegun(historia: Map<string, EventoNuevo[]>, cuentaId: string): Cuenta | undefined {
+  const propios = historia.get(cuentaId) ?? [];
+  const origenes = propios.flatMap((e) => (e.tipo === 'cuentas_unidas' ? (historia.get(e.datos.cuentaOrigenId) ?? []) : []));
+  return reducirSalon([...origenes, ...propios]).cuentas.get(cuentaId);
+}
+
+/**
  * Las reglas de la caja que dependen de lo que ya pasó: un solo turno abierto
  * a la vez, y nada se imputa a un turno cerrado. Dos cajas que abren sin red
  * al mismo tiempo: la segunda queda rechazada y a la vista.
@@ -150,11 +202,16 @@ function motivoDeTurno(evento: EventoNuevo, turnos: Map<string, { cerrado: boole
 export async function recibirEventos(actor: UsuarioSesion, dispositivoId: string, lote: EventoNuevo[], horaDispositivo: string | null) {
   await dispositivoVigente(dispositivoId);
   if (lote.some((e) => e.dispositivoId !== dispositivoId)) throw new ErrorDominio('El lote mezcla eventos de otro dispositivo');
-  const [referencias, turnos, dia] = await Promise.all([referenciasDe(lote), estadoTurnos(), diaAbierto()]);
+  const [referencias, turnos, dia, historia] = await Promise.all([referenciasDe(lote), estadoTurnos(), diaAbierto(), historiaDeCuentas(lote)]);
 
   const recepciones: Recepcion[] = [];
   for (const evento of lote) {
-    const motivo = motivoDeRechazo(evento, referencias) ?? motivoDeTurno(evento, turnos);
+    const esDeCuenta = definicion(evento.tipo).agregado === 'cuenta';
+    const motivo =
+      motivoDeRechazo(evento, referencias) ??
+      motivoDeTurno(evento, turnos) ??
+      motivoDeAutorizacion(evento, esDeCuenta ? cuentaSegun(historia, evento.agregadoId) : undefined, referencias);
+    if (!motivo && esDeCuenta) historia.set(evento.agregadoId, [...(historia.get(evento.agregadoId) ?? []), evento]);
     if (!motivo && evento.tipo === 'turno_abierto') turnos.set(evento.agregadoId, { cerrado: false });
     if (!motivo && evento.tipo === 'turno_cerrado') turnos.set(evento.agregadoId, { cerrado: true });
     const creadoEn = new Date(evento.creadoEnDispositivo);

@@ -88,7 +88,8 @@ function TarjetaComanda({
       <ul className="mb-4 flex-1">
         {comanda.items.map((item) => (
           <li key={item.id} className="border-b border-borde/60 py-2 last:border-0">
-            <p className="text-base text-tinta">
+            {item.anulado ? <Insignia tono="error">Anulado: no preparar</Insignia> : null}
+            <p className={item.anulado ? 'text-base text-tinta-tenue line-through' : 'text-base text-tinta'}>
               <span className="font-semibold tabular-nums">{item.cantidad} ×</span> {item.nombre}
             </p>
             {item.modificadores.length ? <p className="text-sm font-medium text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}

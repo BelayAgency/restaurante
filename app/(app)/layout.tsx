@@ -8,6 +8,7 @@ import { esRol } from '@/dominio/roles';
 import { NOMBRE_SISTEMA } from '@/lib/marca';
 import { leerServicioBelay } from '@/lib/servicio-belay';
 import { usuarioDePagina } from '@/lib/sesion';
+import { ProveedorAutorizacion } from './autorizacion';
 import { MotorSync } from './motor-sync';
 import { Navegacion } from './navegacion';
 import { PieUsuario } from './pie-usuario';
@@ -26,9 +27,11 @@ async function MarcoAutenticado({ children }: { children: ReactNode }) {
       <CartelNuevaVersion />
       <ProveedorSesion usuario={usuario} vista={vista}>
         <MotorSync />
-        <Marco nombreSistema={NOMBRE_SISTEMA} nav={<Navegacion />} pie={<PieUsuario />}>
-          {children}
-        </Marco>
+        <ProveedorAutorizacion>
+          <Marco nombreSistema={NOMBRE_SISTEMA} nav={<Navegacion />} pie={<PieUsuario />}>
+            {children}
+          </Marco>
+        </ProveedorAutorizacion>
       </ProveedorSesion>
     </>
   );

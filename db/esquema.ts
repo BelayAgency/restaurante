@@ -535,3 +535,33 @@ export const lineasConteo = pgTable(
   },
   (t) => [uniqueIndex('lineas_conteo_idx').on(t.conteoId, t.insumoId)],
 );
+
+// Control interno: los motivos que se eligen al autorizar, quién autoriza
+// cada acción y los umbrales de las alertas. Se configura con conexión y baja
+// a los dispositivos con el catálogo.
+
+export const motivosAutorizacion = pgTable('motivos_autorizacion', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accion: text('accion').notNull(),
+  texto: text('texto').notNull(),
+  orden: integer('orden').notNull().default(0),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const reglasAutorizacion = pgTable('reglas_autorizacion', {
+  accion: text('accion').primaryKey(),
+  roles: text('roles').array().notNull(),
+});
+
+export const configuracionControl = pgTable('configuracion_control', {
+  id: integer('id').primaryKey().default(1),
+  umbrales: jsonb('umbrales').$type<Record<string, number>>().notNull().default({}),
+  actualizadoEn: momento('actualizado_en').notNull().defaultNow(),
+});
+
+// Una alerta se calcula del log; lo único que se guarda es que alguien la vio.
+export const alertasVistas = pgTable('alertas_vistas', {
+  clave: text('clave').primaryKey(),
+  vistaPorId: text('vista_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  vistaEn: momento('vista_en').notNull().defaultNow(),
+});

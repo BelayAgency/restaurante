@@ -8,6 +8,8 @@ import {
   gruposModificador,
   mediosPago,
   modificadores,
+  motivosAutorizacion,
+  reglasAutorizacion,
   pinesOperador,
   preciosProducto,
   productos,
@@ -17,10 +19,11 @@ import {
 } from '@/db/esquema';
 import type { Catalogo, GrupoCatalogo } from '@/dominio/catalogo';
 import { esRol, type Rol } from '@/dominio/roles';
+import { esAccionAutorizable, type AccionAutorizable } from '@/dominio/autorizaciones';
 import { sinArchivado } from './filas';
 
 export async function leerCatalogo(): Promise<Catalogo> {
-  const [filasOperadores, filasSectores, filasElementos, filasEstaciones, filasCategorias, filasProductos, filasGrupos, filasModificadores, filasRelaciones, filasMedios] =
+  const [filasOperadores, filasSectores, filasElementos, filasEstaciones, filasCategorias, filasProductos, filasGrupos, filasModificadores, filasRelaciones, filasMedios, filasMotivos, filasReglas] =
     await Promise.all([
       db
         .select({ id: usuarios.id, nombre: usuarios.nombre, rol: usuarios.rol, esSoporte: usuarios.esSoporte, pinHash: pinesOperador.hash })
@@ -42,6 +45,8 @@ export async function leerCatalogo(): Promise<Catalogo> {
       db.select().from(modificadores).where(isNull(modificadores.archivadoEn)).orderBy(asc(modificadores.orden), asc(modificadores.nombre)),
       db.select().from(productosGrupos).orderBy(asc(productosGrupos.orden)),
       db.select({ id: mediosPago.id, nombre: mediosPago.nombre, efectivo: mediosPago.efectivo }).from(mediosPago).where(isNull(mediosPago.archivadoEn)).orderBy(asc(mediosPago.orden)),
+      db.select().from(motivosAutorizacion).where(isNull(motivosAutorizacion.archivadoEn)).orderBy(asc(motivosAutorizacion.orden)),
+      db.select().from(reglasAutorizacion),
     ]);
 
   const grupos = new Map<string, GrupoCatalogo>(
@@ -73,5 +78,7 @@ export async function leerCatalogo(): Promise<Catalogo> {
     })),
     grupos: [...grupos.values()],
     medios: filasMedios,
+    motivos: filasMotivos.filter((m) => esAccionAutorizable(m.accion)).map((m) => ({ id: m.id, accion: m.accion as AccionAutorizable, texto: m.texto })),
+    reglas: Object.fromEntries(filasReglas.filter((r) => esAccionAutorizable(r.accion)).map((r) => [r.accion, r.roles.filter(esRol)])),
   };
 }

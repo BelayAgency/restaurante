@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { ArrowRightLeft, ChefHat, Combine, HandCoins, MoveRight, Plus, Printer, UserRound, X } from 'lucide-react';
+import { ArrowRightLeft, ChefHat, Combine, HandCoins, MoveRight, Percent, Plus, Printer, UserRound, X } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { Modal } from '@/components/modal';
 import { Selector } from '@/components/selector';
@@ -15,13 +15,15 @@ import { pesosDesdeCentavos } from '@/lib/formato';
 import { NOMBRE_SISTEMA } from '@/lib/marca';
 import { AgregarItems } from './agregar-items';
 import { nombreMesa, nombreOperador, useRegistrar, type Operador } from './contexto';
+import { ModalCorregirItem, ModalDescuento } from './correcciones';
 import { imprimirPrecuenta } from './imprimir-precuenta';
 
 type Operacion = 'mover' | 'unir' | 'pasar' | 'mozo' | null;
 
-function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar, listo }: {
+function FilaItem({ item, alQuitar, alCorregir, seleccionable, seleccionado, alSeleccionar, listo }: {
   item: Item;
   listo?: boolean;
+  alCorregir?: () => void;
   alQuitar?: () => void;
   seleccionable?: boolean;
   seleccionado?: boolean;
@@ -33,8 +35,18 @@ function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar, 
         <input type="checkbox" checked={seleccionado} onChange={alSeleccionar} aria-label={`Elegir ${item.nombre}`} className="mt-1 accent-[var(--color-acento)]" />
       ) : null}
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-tinta">
+        <p className={item.anulado ? 'text-sm text-tinta-tenue line-through' : 'text-sm text-tinta'}>
           <span className="tabular-nums">{item.cantidad} ×</span> {item.nombre}
+          {item.anulado ? (
+            <Insignia tono="error" className="ml-2">
+              Anulado
+            </Insignia>
+          ) : null}
+          {item.cortesia ? (
+            <Insignia tono="acento" className="ml-2">
+              Cortesía
+            </Insignia>
+          ) : null}
           {listo ? (
             <Insignia tono="exito" className="ml-2">
               Listo
@@ -49,7 +61,17 @@ function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar, 
         {item.modificadores.length ? <p className="text-xs text-tinta-tenue">{item.modificadores.map((m) => m.nombre).join(' · ')}</p> : null}
         {item.nota ? <p className="text-xs italic text-tinta-suave">«{item.nota}»</p> : null}
       </div>
-      <span className="text-sm tabular-nums text-tinta">{pesosDesdeCentavos(importeItem(item))}</span>
+      <span className="text-right text-sm tabular-nums text-tinta">
+        {item.precioOriginalCentavos !== null ? (
+          <span className="block text-xs text-tinta-tenue line-through">{pesosDesdeCentavos(item.precioOriginalCentavos * item.cantidad)}</span>
+        ) : null}
+        {pesosDesdeCentavos(importeItem(item))}
+      </span>
+      {alCorregir && !item.anulado ? (
+        <Boton variante="fantasma" tamano="sm" onClick={alCorregir}>
+          Corregir
+        </Boton>
+      ) : null}
       {alQuitar ? (
         <Boton variante="fantasma" tamano="sm" soloIcono aria-label={`Quitar ${item.nombre}`} onClick={alQuitar}>
           <X size={14} strokeWidth={1.5} />
@@ -82,6 +104,8 @@ export function PanelCuenta({
   const [operacion, setOperacion] = useState<Operacion>(null);
   const [destino, setDestino] = useState<string | null>(null);
   const [elegidos, setElegidos] = useState<string[]>([]);
+  const [corrigiendo, setCorrigiendo] = useState<Item | null>(null);
+  const [descontando, setDescontando] = useState(false);
   const [ocupado, iniciar] = useTransition();
 
   const items = [...cuenta.items.values()];
@@ -140,7 +164,7 @@ export function PanelCuenta({
 
   return (
     <>
-      <Modal abierto={!agregando && operacion === null} alCerrar={alCerrar} titulo={titulo}>
+      <Modal abierto={!agregando && operacion === null && !corrigiendo && !descontando} alCerrar={alCerrar} titulo={titulo}>
         <div className="modal-cuerpo flex flex-col gap-4">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-tinta-suave">
             <span className="inline-flex items-center gap-1">
@@ -176,13 +200,20 @@ export function PanelCuenta({
                   <p className="mb-1 text-xs font-medium uppercase tracking-wide text-tinta-tenue">En cocina</p>
                   <ul>
                     {enviados.map((i) => (
-                      <FilaItem key={i.id} item={i} listo={listos.has(i.id)} />
+                      <FilaItem key={i.id} item={i} listo={listos.has(i.id)} alCorregir={() => setCorrigiendo(i)} />
                     ))}
                   </ul>
                 </section>
               ) : null}
             </>
           )}
+
+          {cuenta.descuentos.map((d) => (
+            <div key={d.id} className="flex items-baseline justify-between text-sm">
+              <span className="text-tinta-suave">Descuento{d.porcentaje !== null ? ` ${d.porcentaje} %` : ''}</span>
+              <span className="tabular-nums text-tinta">− {pesosDesdeCentavos(d.montoCentavos)}</span>
+            </div>
+          ))}
 
           <div className="flex items-baseline justify-between border-t border-borde pt-3">
             <span className="text-sm text-tinta-suave">Total</span>
@@ -201,6 +232,9 @@ export function PanelCuenta({
             </Boton>
             <Boton variante="secundario" tamano="sm" onClick={() => setOperacion('mozo')} disabled={ocupado}>
               <UserRound size={13} strokeWidth={1.5} /> Mozo
+            </Boton>
+            <Boton variante="secundario" tamano="sm" onClick={() => setDescontando(true)} disabled={ocupado || total <= 0}>
+              <Percent size={13} strokeWidth={1.5} /> Descuento
             </Boton>
           </div>
         </div>
@@ -221,6 +255,8 @@ export function PanelCuenta({
         </footer>
       </Modal>
 
+      {corrigiendo ? <ModalCorregirItem cuentaId={cuenta.id} item={corrigiendo} operador={operador} alCerrar={() => setCorrigiendo(null)} /> : null}
+      {descontando ? <ModalDescuento cuenta={cuenta} operador={operador} alCerrar={() => setDescontando(false)} /> : null}
       {agregando ? <AgregarItems abierto alCerrar={() => setAgregando(false)} cuentaId={cuenta.id} catalogo={catalogo} operador={operador} /> : null}
 
       {operacion ? (

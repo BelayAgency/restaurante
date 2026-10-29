@@ -18,6 +18,7 @@ export type Accion =
   | 'dia.cerrar'
   | 'stock.administrar'
   | 'stock.contar'
+  | 'control.configurar'
   | 'carta.administrar'
   | 'plano.administrar'
   | 'control.ver';
@@ -35,6 +36,7 @@ const PERMISOS: Record<Accion, readonly Rol[]> = {
   'stock.administrar': ['dueno', 'encargado', 'stock'],
   // Contar bebidas a la noche lo puede hacer quien cierra la barra.
   'stock.contar': ['dueno', 'encargado', 'stock', 'cajero'],
+  'control.configurar': ['dueno'],
   'carta.administrar': ['dueno', 'encargado'],
   'plano.administrar': ['dueno'],
   'control.ver': ['dueno'],

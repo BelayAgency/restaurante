@@ -16,6 +16,8 @@ export interface ItemComanda {
   cantidad: number;
   modificadores: string[];
   nota: string | null;
+  /** Se anuló después de enviarlo: cocina lo ve tachado, no desaparece. */
+  anulado: boolean;
 }
 
 export interface Comanda {
@@ -78,7 +80,14 @@ export function reducirCocina(eventos: Iterable<EventoNuevo>): Map<string, Coman
             cantidad: item.cantidad,
             modificadores: item.modificadores.map((m) => m.nombre),
             nota: item.nota,
+            anulado: false,
           });
+        }
+        break;
+      case 'item_anulado':
+        for (const comanda of comandas.values()) {
+          const item = comanda.items.find((i) => i.id === evento.datos.itemId);
+          if (item) item.anulado = true;
         }
         break;
       case 'comanda_iniciada':

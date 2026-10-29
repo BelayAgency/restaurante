@@ -175,6 +175,44 @@ const DEFINICIONES = {
     accion: 'caja.operar',
     datos: z.object({}),
   },
+
+  // Correcciones sobre una cuenta: ninguna borra nada, y todas piden la
+  // autorización de un encargado (dominio/autorizaciones.ts).
+  item_anulado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ itemId: id }),
+  },
+  item_cortesia: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ itemId: id }),
+  },
+  precio_modificado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ itemId: id, precioCentavos: centavos }),
+  },
+  descuento_aplicado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({
+      descuentoId: id,
+      /** El porcentaje si se pidió así; el monto es lo que se descuenta. */
+      porcentaje: z.number().min(0).max(100).nullable(),
+      montoCentavos: centavos.min(1),
+    }),
+  },
+  cuenta_reabierta: {
+    agregado: 'cuenta',
+    accion: 'caja.operar',
+    datos: z.object({}),
+  },
+  cobro_corregido: {
+    agregado: 'cuenta',
+    accion: 'caja.operar',
+    datos: z.object({ cobroId: id, pagos: z.array(pago).min(1).max(10) }),
+  },
 } as const satisfies Record<string, { agregado: 'dispositivo' | 'cuenta' | 'turno'; accion: Accion; datos: z.ZodType }>;
 
 export type TipoEvento = keyof typeof DEFINICIONES;
@@ -217,6 +255,12 @@ export const esquemaEvento = z.discriminatedUnion('tipo', [
   variante('turno_cerrado'),
   variante('cobro_registrado'),
   variante('cuenta_cerrada'),
+  variante('item_anulado'),
+  variante('item_cortesia'),
+  variante('precio_modificado'),
+  variante('descuento_aplicado'),
+  variante('cuenta_reabierta'),
+  variante('cobro_corregido'),
 ]);
 
 export type EventoNuevo = z.infer<typeof esquemaEvento>;

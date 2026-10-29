@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { ArrowDownToLine, CalendarCheck, CircleDollarSign, Lock, LockOpen, Printer, Split, Tablet } from 'lucide-react';
+import { Boton } from '@/components/boton';
 import { CargandoTarjeta } from '@/components/carga';
 import { Isla, type ItemIsla } from '@/components/isla';
 import { useToast } from '@/components/toast';
@@ -18,6 +19,7 @@ import { useDatosLocales, useOperadorDe } from '@/local/salon';
 import { imprimirPrecuenta } from '../salon/imprimir-precuenta';
 import { nombreMesa, nombreOperador, useRegistrar, type Operador } from '../salon/contexto';
 import { useSesion } from '../sesion-cliente';
+import { CuentasCerradas } from './cuentas-cerradas';
 import { ModalCobro } from './modal-cobro';
 import { ModalAbrirCaja, ModalArqueo, ModalSalida } from './modales-turno';
 
@@ -79,6 +81,10 @@ export function PantallaCaja() {
   }
 
   const sinCuenta = !cuentaActiva || saldoCuenta(cuentaActiva) <= 0;
+  const cerradas = [...salon.cuentas.values()]
+    .filter((c) => c.estado === 'cerrada')
+    .sort((a, b) => (b.cerradaEn ?? '').localeCompare(a.cerradaEn ?? ''))
+    .slice(0, 10);
   const items: ItemIsla[] = [
     { id: 'cobrar', etiqueta: 'Cobrar', icono: <CircleDollarSign size={20} strokeWidth={1.5} />, atajo: 'c', primaria: true, alApretar: () => setAbierto('cobro-total'), deshabilitada: !turno || sinCuenta || !puedeOperar },
     { id: 'dividir', etiqueta: 'Dividir', icono: <Split size={20} strokeWidth={1.5} />, atajo: 'd', alApretar: () => setAbierto('cobro-partes'), deshabilitada: !turno || sinCuenta || !puedeOperar },
@@ -207,10 +213,33 @@ export function PantallaCaja() {
                 </div>
               </dl>
               {!turno ? <p className="mt-3 text-sm text-tinta-tenue">Abrí la caja para cobrar.</p> : null}
+              {saldoCuenta(cuentaActiva) > 0 && puedeOperar ? (
+                <div className="mt-4">
+                  <Boton
+                    variante="fantasma"
+                    tamano="sm"
+                    onClick={() =>
+                      iniciar(async () => {
+                        // Con saldo, cerrar es cerrar sin cobrar: pide autorización.
+                        if (await registrar('cuenta_cerrada', cuentaActiva.id, {})) toast.exito('Cuenta cerrada sin cobrar');
+                      })
+                    }
+                  >
+                    Cerrar sin cobrar
+                  </Boton>
+                </div>
+              ) : null}
             </>
           )}
         </Tarjeta>
       </div>
+
+      <section className="mt-8">
+        <TituloSeccion descripcion="Reabrir una cuenta o corregir el medio de pago pide autorización.">Últimas cuentas cerradas</TituloSeccion>
+        <Tarjeta>
+          <CuentasCerradas cuentas={cerradas} catalogo={catalogo} operador={operador} nombreCuenta={nombreCuenta} />
+        </Tarjeta>
+      </section>
 
       <Isla items={items} />
 

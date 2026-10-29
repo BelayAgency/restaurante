@@ -1,9 +1,13 @@
 'use client';
 
 import { useToast } from '@/components/toast';
+import { autorizacionRequerida } from '@/dominio/autorizaciones';
 import type { Catalogo, OperadorCatalogo } from '@/dominio/catalogo';
-import type { DatosDe, TipoEvento } from '@/dominio/eventos';
+import type { DatosDe, EventoNuevo, TipoEvento } from '@/dominio/eventos';
+import { reducirSalon } from '@/dominio/reductores/salon';
+import { baseLocal } from '@/local/base';
 import { EventoNoPermitido, registrarEvento } from '@/local/sync';
+import { usePedirAutorizacion } from '../autorizacion';
 
 export interface Operador {
   id: string;
@@ -11,17 +15,28 @@ export interface Operador {
   rol: OperadorCatalogo['rol'];
 }
 
+/** La cuenta tal como la ve el dispositivo ahora, para decidir si el evento necesita autorización. */
+async function cuentaLocal(cuentaId: string) {
+  const [confirmados, pendientes] = await Promise.all([baseLocal.confirmados.orderBy('secuencia').toArray(), baseLocal.pendientes.orderBy('orden').toArray()]);
+  return reducirSalon([...confirmados, ...pendientes.map((p) => p.evento)]).cuentas.get(cuentaId);
+}
+
 /**
- * Registra un evento del salón a nombre del operador activo. Sin red queda en
- * la bandeja; con red sale al toque. Si el operador no tiene permiso, avisa y
- * no se registra nada.
+ * Registra un evento a nombre del operador activo. Si la acción necesita
+ * autorización, la pide antes (PIN de un encargado y motivo). Sin red queda en
+ * la bandeja; con red sale al toque. Si no se puede, avisa y no registra nada.
  */
 export function useRegistrar(operador: Operador) {
   const toast = useToast();
+  const pedirAutorizacion = usePedirAutorizacion();
   return async function registrar<T extends TipoEvento>(tipo: T, agregadoId: string, datos: DatosDe<T>): Promise<boolean> {
     try {
+      const borrador = { tipo, agregadoId, datos } as unknown as EventoNuevo;
+      const accion = autorizacionRequerida(borrador, tipo === 'salida_caja' ? undefined : await cuentaLocal(agregadoId));
+      const autorizacion = accion ? await pedirAutorizacion(accion, operador) : undefined;
+      if (accion && !autorizacion) return false;
       // El tipo ya ata los datos al evento; TypeScript no lo sigue a través del genérico.
-      await registrarEvento(tipo, agregadoId, datos as never, operador);
+      await registrarEvento(tipo, agregadoId, datos as never, operador, autorizacion ?? undefined);
       return true;
     } catch (error) {
       toast.error(error instanceof EventoNoPermitido ? error.message : 'No se pudo registrar. Probá de nuevo.');
