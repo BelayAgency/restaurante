@@ -11,11 +11,15 @@
     "test": "vitest run",
     "db:generar": "drizzle-kit generate",
     "db:migrar": "node --env-file=.env scripts/dist/migrar.cjs",
-    "build:scripts": "esbuild scripts/migrar.ts --bundle --platform=node --target=node24 --format=cjs --outfile=scripts/dist/migrar.cjs",
-    "mails:simulado": "node scripts/mails-simulado.mjs"
+    "build:scripts": "esbuild scripts/migrar.ts scripts/sembrar.ts --bundle --platform=node --target=node24 --format=cjs --outdir=scripts/dist --out-extension:.js=.cjs --external:@node-rs/argon2",
+    "mails:simulado": "node scripts/mails-simulado.mjs",
+    "db:sembrar": "node --env-file=.env scripts/dist/sembrar.cjs"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "better-auth": "^1.7.14",
     "clsx": "^2.1.1",
+    "dexie": "^4.4.7",
     "drizzle-orm": "^0.45.4",
     "lucide-react": "^1.63.0",
     "next": "16.4.3",

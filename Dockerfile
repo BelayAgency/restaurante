@@ -21,9 +21,9 @@ COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
 # .cjs y no .js: el package.json del standalone declara "type": "module".
-COPY --from=build --chown=app:app /app/scripts/dist/migrar.cjs ./scripts/migrar.cjs
+COPY --from=build --chown=app:app /app/scripts/dist/ ./scripts/
 COPY --from=build --chown=app:app /app/db/migraciones ./db/migraciones
 USER app
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT}/api/salud" >/dev/null || exit 1
-CMD ["sh", "-c", "node scripts/migrar.cjs && exec node server.js"]
+CMD ["sh", "-c", "node scripts/migrar.cjs && node scripts/sembrar.cjs && exec node server.js"]

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Mail, KeyRound, LoaderCircle, ShieldCheck, Upload } from 'lucide-react';
+import { Hash, Mail, KeyRound, LoaderCircle, ShieldCheck, Upload } from 'lucide-react';
 import { Modal } from './modal';
 import { Avatar } from './avatar';
 import { Campo } from './campo';
@@ -78,6 +78,8 @@ export function ModalUsuario({
   alCerrarSesiones,
   alEliminar,
   alGuardar,
+  alCambiarPin,
+  tienePin,
   guardando,
   aviso,
 }: {
@@ -117,6 +119,9 @@ export function ModalUsuario({
   alEliminar?: () => void;
   /** Sólo con `esPropio`: el botón "Guardar" del pie. */
   alGuardar?: () => void;
+  /** El PIN con el que la persona se identifica en los dispositivos compartidos. Sin esta prop no aparece la fila. */
+  alCambiarPin?: () => void;
+  tienePin?: boolean;
   guardando?: boolean;
   aviso?: { tono: 'error' | 'alerta'; titulo?: string; detalle?: ReactNode };
 }) {
@@ -204,7 +209,7 @@ export function ModalUsuario({
                       Soporte
                     </Insignia>
                   ) : soloLectura ? (
-                    <Insignia tono="acento">{usuario.rol}</Insignia>
+                    <Insignia tono="acento">{roles.find((r) => r.valor === usuario.rol)?.etiqueta ?? usuario.rol}</Insignia>
                   ) : (
                     <Selector
                       opciones={roles}
@@ -249,6 +254,18 @@ export function ModalUsuario({
                   </Boton>
                 ) : null}
               </div>
+
+              {alCambiarPin && (esPropio || accionesDeAdmin) ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-lienzo px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-tinta">PIN de operador</p>
+                    <p className="truncate text-xs text-tinta-tenue">{tienePin ? '••••' : 'Sin PIN'}</p>
+                  </div>
+                  <Boton type="button" variante="secundario" tamano="sm" onClick={alCambiarPin} disabled={guardando}>
+                    <Hash size={13} strokeWidth={1.5} /> {tienePin ? 'Cambiar PIN' : 'Poner PIN'}
+                  </Boton>
+                </div>
+              ) : null}
             </div>
 
             <footer className="modal-pie justify-between">

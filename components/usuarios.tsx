@@ -9,6 +9,7 @@ import { Selector, type OpcionSelector } from './selector';
 import { Boton } from './boton';
 import { Insignia, Tabla, Th, Td } from './ui';
 import { Requisitos } from './acceso';
+import { evaluarPassword } from '@/dominio/contrasena';
 
 /**
  * Usuarios — el listado y el alta. La ficha de cada uno (ver, cambiar rol,
@@ -107,12 +108,7 @@ export function ModalNuevoUsuario({
   const [rol, setRol] = useState<string | null>(null);
   const [contrasena, setContrasena] = useState('');
 
-  const requisitos = [
-    { texto: '10 caracteres', cumplido: contrasena.length >= 10 },
-    { texto: 'Una mayúscula', cumplido: /[A-Z]/.test(contrasena) },
-    { texto: 'Un número', cumplido: /[0-9]/.test(contrasena) },
-    { texto: 'Un símbolo', cumplido: /[^A-Za-z0-9]/.test(contrasena) },
-  ];
+  const requisitos = evaluarPassword(contrasena);
   const contrasenaValida = requisitos.every((r) => r.cumplido);
 
   function alCerrarModal() {

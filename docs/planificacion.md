@@ -220,3 +220,22 @@ Las fases 0 y 1 son las largas y no muestran nada del restaurante todavía: es a
 - Sin delivery, sin reservas online, sin ARCA hasta que se confirme.
 - Estaciones: cocina, parrilla, barra, postres — configurables.
 - Carga inicial de carta, insumos y recetas: por planilla importable (formato a definir en la fase 5 según cómo lo lleve hoy el cliente).
+- Facturación (Configuración) la ve sólo el dueño: la relación con Belay no es de cada mozo.
+- Administrar usuarios es del dueño (y soporte). El encargado ve la lista, sin soporte, y no la edita.
+- Cambiar el email o la contraseña de otra cuenta sólo lo hace soporte (el código va a la agencia). Un dueño le manda a otro el código de recuperación a su casilla.
+- Tipografía: Inter, hasta que la agencia indique otra.
+
+---
+
+## 9. Estado
+
+**Fase 0** — hecha.
+
+**Fase 1** — hecha, sin desplegar. Probado:
+- Login con contador de intentos por dirección (exista o no la cuenta) y bloqueo a los 5; sesión de 400 días deslizante.
+- Recuperación por código y cambio de credenciales: código hasheado, 15 minutos, 5 intentos; soporte sobre otra cuenta → el código va a `info@belay.agency` y el aviso a la persona; todo cambio de contraseña cierra todas las sesiones; cada acción queda en `auditoria`.
+- Log de eventos inmutable en la base (trigger), recepción idempotente, rechazados guardados con motivo y no repartidos, dispositivo sin registrar → 403, canal en vivo por LISTEN/NOTIFY.
+
+Sin verificar todavía:
+- La prueba con DevTools en modo offline (el panel del navegador de esta sesión no lo permite): abrir la app sin red, cambiar de operador y ver que la bandeja se vacía al volver.
+- El cambio de operador por PIN de punta a punta en pantalla (el reductor y el PIN tienen tests).

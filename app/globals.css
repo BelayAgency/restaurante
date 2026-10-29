@@ -1235,6 +1235,12 @@
     box-shadow: var(--sombra-flotante);
   }
 
+  /* El `flex` de arriba pisa el `display: none` que el navegador le da a un
+     <dialog> cerrado: sin esto el modal queda dibujado abajo de la página. */
+  .config:not([open]) {
+    display: none;
+  }
+
   .config::backdrop {
     background-color: rgb(0 0 0 / 0.45);
     backdrop-filter: blur(2px);
