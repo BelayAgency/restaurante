@@ -14,6 +14,8 @@ export type Accion =
   | 'operador.cambiar'
   | 'salon.operar'
   | 'cocina.operar'
+  | 'caja.operar'
+  | 'dia.cerrar'
   | 'carta.administrar'
   | 'plano.administrar'
   | 'control.ver';
@@ -26,6 +28,8 @@ const PERMISOS: Record<Accion, readonly Rol[]> = {
   'operador.cambiar': ['dueno', 'encargado', 'cajero', 'mozo', 'cocina', 'stock'],
   'salon.operar': ['dueno', 'encargado', 'cajero', 'mozo'],
   'cocina.operar': ['dueno', 'encargado', 'cocina'],
+  'caja.operar': ['dueno', 'encargado', 'cajero'],
+  'dia.cerrar': ['dueno', 'encargado'],
   'carta.administrar': ['dueno', 'encargado'],
   'plano.administrar': ['dueno'],
   'control.ver': ['dueno'],

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, ChefHat, LayoutGrid, PencilRuler, Tablet, Users, type LucideIcon } from 'lucide-react';
+import { BookOpen, ChefHat, CircleDollarSign, LayoutGrid, PencilRuler, Tablet, Users, type LucideIcon } from 'lucide-react';
 import { puede, type Accion } from '@/dominio/permisos';
 import { useSesion } from './sesion-cliente';
 
@@ -16,6 +16,7 @@ interface Seccion {
 const SECCIONES: Seccion[] = [
   { href: '/', texto: 'Salón', icono: LayoutGrid, requiere: 'salon.operar' },
   { href: '/cocina', texto: 'Cocina', icono: ChefHat, requiere: 'cocina.operar' },
+  { href: '/caja', texto: 'Caja', icono: CircleDollarSign, requiere: 'caja.operar' },
   { href: '/carta', texto: 'Carta', icono: BookOpen, requiere: 'carta.administrar' },
   { href: '/plano', texto: 'Plano', icono: PencilRuler, requiere: 'plano.administrar' },
   { href: '/usuarios', texto: 'Usuarios', icono: Users, requiere: 'usuarios.ver' },

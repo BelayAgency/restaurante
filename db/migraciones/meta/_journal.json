@@ -22,6 +22,13 @@
       "when": 1793236625737,
       "tag": "0002_salon_y_carta",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793238981964,
+      "tag": "0003_caja",
+      "breakpoints": true
     }
   ]
 }

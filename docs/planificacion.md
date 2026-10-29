@@ -247,6 +247,10 @@ Pendiente de fases siguientes: anular un ítem ya enviado (necesita la autorizac
 
 **Fase 3** — hecha, sin desplegar. Pantalla de cocina (`/cocina`) por estación, guardada en el dispositivo: cada envío se parte por estación, se marca «Empezar» y «Listo», y lo listo se puede reabrir. Borde ámbar a los 10 minutos, rojo a los 20 (demorada), y la mesa se pinta de rojo en el plano. Suena un aviso cuando entra una comanda. El mozo ve cada ítem «Listo» en la cuenta. Un usuario de cocina entra directo a su pantalla. Impresoras térmicas: quedan para cuando haya nodo local (decisión 0.1).
 
+**Fase 4** — hecha, sin desplegar. Caja (`/caja`) con la isla de atajos (C cobrar, D dividir, P precuenta, R retiro, A/X abrir y cerrar caja). Cobro total, en partes iguales o por ítem, con varios medios, propina aparte y vuelto; si salda, la cuenta se cierra y la mesa queda libre. Turno con fondo inicial, retiros y egresos con motivo, y arqueo ciego: quien cierra declara sin ver lo esperado, y la diferencia la ve el encargado o el dueño. Cierre del día (`/caja/cierre`, con conexión): exige caja y cuentas cerradas, congela los totales y avisa qué dispositivos no sincronizaron; lo que llegue después con hora de un día cerrado entra en el siguiente, marcado. El servidor no deja abrir dos cajas a la vez ni imputar nada a una cerrada. Medios de pago: efectivo, débito, crédito, transferencia y QR (supuesto, se editan más adelante). Probado de punta a punta en el build de producción.
+
+Pendiente de la fase 6: autorización por PIN para retiros, egresos, cambiar el medio de pago de un cobro y cerrar una cuenta sin cobrar (hoy no se puede: sólo se cierra al saldarse).
+
 Sin verificar todavía:
 - El aviso sonoro de cocina (el navegador de esta sesión no reproduce audio).
 - El service worker: el navegador embebido de esta sesión no deja registrar ninguno. Probar en Chrome: que se registre, que la app abra sin red y que lo cargado sin red salga al volver.

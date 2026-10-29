@@ -173,6 +173,10 @@ export const eventos = pgTable(
     recibidoEn: momento('recibido_en').notNull().defaultNow(),
     resultado: resultadoEvento('resultado').notNull(),
     motivoRechazo: text('motivo_rechazo'),
+    diaOperativoId: uuid('dia_operativo_id'),
+    // Llegó con hora de un día que ya estaba cerrado: se acepta (lo cobrado se
+    // cobró) pero entra en el día siguiente, marcado.
+    posteriorAlCierre: boolean('posterior_al_cierre').notNull().default(false),
   },
   (t) => [
     uniqueIndex('eventos_secuencia_idx').on(t.secuencia),
@@ -310,3 +314,21 @@ export const productosGrupos = pgTable(
   },
   (t) => [uniqueIndex('productos_grupos_idx').on(t.productoId, t.grupoId)],
 );
+
+export const mediosPago = pgTable('medios_pago', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  efectivo: boolean('efectivo').notNull().default(false),
+  orden: integer('orden').notNull().default(0),
+  archivadoEn: momento('archivado_en'),
+});
+
+// El día operativo va de un cierre al siguiente, no de medianoche a
+// medianoche: un turno de noche termina a las 2 y sigue siendo el mismo día.
+export const diasOperativos = pgTable('dias_operativos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  abiertoEn: momento('abierto_en').notNull().defaultNow(),
+  cerradoEn: momento('cerrado_en'),
+  cerradoPorId: text('cerrado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  totales: jsonb('totales').$type<Record<string, unknown>>(),
+});

@@ -16,4 +16,9 @@ export const NOMBRE_EVENTO: Record<TipoEvento, string> = {
   comanda_iniciada: 'Comanda en preparación',
   comanda_lista: 'Comanda lista',
   comanda_reabierta: 'Comanda reabierta',
+  turno_abierto: 'Apertura de caja',
+  salida_caja: 'Retiro o egreso de caja',
+  turno_cerrado: 'Cierre de caja',
+  cobro_registrado: 'Cobro',
+  cuenta_cerrada: 'Cuenta cerrada',
 };

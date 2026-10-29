@@ -75,6 +75,12 @@ export interface ProductoCatalogo {
   grupoIds: string[];
 }
 
+export interface MedioPago {
+  id: string;
+  nombre: string;
+  efectivo: boolean;
+}
+
 export interface Catalogo {
   operadores: OperadorCatalogo[];
   sectores: SectorCatalogo[];
@@ -83,6 +89,7 @@ export interface Catalogo {
   categorias: CategoriaCatalogo[];
   productos: ProductoCatalogo[];
   grupos: GrupoCatalogo[];
+  medios: MedioPago[];
 }
 
 export const CATALOGO_VACIO: Catalogo = {
@@ -93,4 +100,5 @@ export const CATALOGO_VACIO: Catalogo = {
   categorias: [],
   productos: [],
   grupos: [],
+  medios: [],
 };

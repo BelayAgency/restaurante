@@ -27,7 +27,8 @@ export function useDatosLocales(): DatosLocales | undefined {
     ]);
     return {
       dispositivoId: dispositivo?.valor ?? null,
-      catalogo: catalogo?.valor ?? CATALOGO_VACIO,
+      // Un catálogo guardado por una versión anterior puede no traer todo: lo que falta, vacío.
+      catalogo: { ...CATALOGO_VACIO, ...catalogo?.valor },
       eventos: [...confirmados, ...pendientes.map((p) => p.evento)],
       pendientes: pendientes.length,
     };

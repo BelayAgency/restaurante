@@ -6,6 +6,7 @@ import {
   elementosPlano,
   estaciones,
   gruposModificador,
+  mediosPago,
   modificadores,
   pinesOperador,
   preciosProducto,
@@ -19,7 +20,7 @@ import { esRol, type Rol } from '@/dominio/roles';
 import { sinArchivado } from './filas';
 
 export async function leerCatalogo(): Promise<Catalogo> {
-  const [filasOperadores, filasSectores, filasElementos, filasEstaciones, filasCategorias, filasProductos, filasGrupos, filasModificadores, filasRelaciones] =
+  const [filasOperadores, filasSectores, filasElementos, filasEstaciones, filasCategorias, filasProductos, filasGrupos, filasModificadores, filasRelaciones, filasMedios] =
     await Promise.all([
       db
         .select({ id: usuarios.id, nombre: usuarios.nombre, rol: usuarios.rol, esSoporte: usuarios.esSoporte, pinHash: pinesOperador.hash })
@@ -40,6 +41,7 @@ export async function leerCatalogo(): Promise<Catalogo> {
       db.select().from(gruposModificador).where(isNull(gruposModificador.archivadoEn)).orderBy(asc(gruposModificador.nombre)),
       db.select().from(modificadores).where(isNull(modificadores.archivadoEn)).orderBy(asc(modificadores.orden), asc(modificadores.nombre)),
       db.select().from(productosGrupos).orderBy(asc(productosGrupos.orden)),
+      db.select({ id: mediosPago.id, nombre: mediosPago.nombre, efectivo: mediosPago.efectivo }).from(mediosPago).where(isNull(mediosPago.archivadoEn)).orderBy(asc(mediosPago.orden)),
     ]);
 
   const grupos = new Map<string, GrupoCatalogo>(
@@ -70,5 +72,6 @@ export async function leerCatalogo(): Promise<Catalogo> {
       grupoIds: gruposDe.get(producto.id) ?? [],
     })),
     grupos: [...grupos.values()],
+    medios: filasMedios,
   };
 }

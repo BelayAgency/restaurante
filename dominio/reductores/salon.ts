@@ -34,6 +34,16 @@ export interface Precuenta {
   emitidaPor: string;
 }
 
+export interface Cobro {
+  id: string;
+  turnoId: string;
+  consumoCentavos: number;
+  propinaCentavos: number;
+  pagos: DatosDe<'cobro_registrado'>['pagos'];
+  cobradoEn: string;
+  cobradoPor: string;
+}
+
 export interface Cuenta {
   id: string;
   tipo: DatosDe<'cuenta_abierta'>['tipo'];
@@ -43,8 +53,14 @@ export interface Cuenta {
   nombre: string | null;
   abiertaEn: string;
   abiertaPor: string;
-  /** `unida`: sus ítems pasaron a otra cuenta y ya no se opera. */
-  estado: 'abierta' | 'unida';
+  /** `unida`: sus ítems pasaron a otra cuenta y ya no se opera. `cerrada`: se cobró y liberó la mesa. */
+  estado: 'abierta' | 'unida' | 'cerrada';
+  cerradaEn: string | null;
+  cobros: Cobro[];
+  /** Lo saldado del consumo, sin propinas. */
+  pagadoCentavos: number;
+  /** Ítems ya cobrados cuando se divide por ítem. */
+  itemsPagados: Set<string>;
   items: Map<string, Item>;
   pidioCuenta: boolean;
   precuentas: Precuenta[];
@@ -86,8 +102,16 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
     anomalias.push({ eventoId: evento.id, tipo: evento.tipo, momento: evento.creadoEnDispositivo, operadorId: evento.operadorId, detalle });
 
   for (const evento of eventos) {
-    // Lo de dispositivo y de cocina lo reducen sus propios reductores.
-    if (evento.tipo === 'operador_cambiado' || evento.tipo === 'pin_fallido' || evento.tipo.startsWith('comanda_')) continue;
+    // Lo de dispositivo, cocina y turnos de caja lo reducen sus propios reductores.
+    if (
+      evento.tipo === 'operador_cambiado' ||
+      evento.tipo === 'pin_fallido' ||
+      evento.tipo.startsWith('comanda_') ||
+      evento.tipo === 'turno_abierto' ||
+      evento.tipo === 'salida_caja' ||
+      evento.tipo === 'turno_cerrado'
+    )
+      continue;
 
     if (evento.tipo === 'cuenta_abierta') {
       if (cuentas.has(evento.agregadoId)) continue;
@@ -106,6 +130,10 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
         pidioCuenta: false,
         precuentas: [],
         cambiosTrasPrecuenta: 0,
+        cerradaEn: null,
+        cobros: [],
+        pagadoCentavos: 0,
+        itemsPagados: new Set(),
       });
       continue;
     }
@@ -116,7 +144,7 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
       continue;
     }
     if (cuenta.estado !== 'abierta') {
-      anotar(evento, 'La cuenta ya se había unido a otra');
+      anotar(evento, cuenta.estado === 'cerrada' ? 'La cuenta ya estaba cerrada' : 'La cuenta ya se había unido a otra');
       continue;
     }
 
@@ -204,6 +232,31 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
       case 'cuenta_pedida':
         cuenta.pidioCuenta = true;
         break;
+      case 'cobro_registrado': {
+        const d = evento.datos;
+        if (cuenta.cobros.some((c) => c.id === d.cobroId)) break;
+        cuenta.cobros.push({
+          id: d.cobroId,
+          turnoId: d.turnoId,
+          consumoCentavos: d.consumoCentavos,
+          propinaCentavos: d.propinaCentavos,
+          pagos: d.pagos,
+          cobradoEn: evento.creadoEnDispositivo,
+          cobradoPor: evento.operadorId,
+        });
+        cuenta.pagadoCentavos += d.consumoCentavos;
+        for (const itemId of d.itemIds) cuenta.itemsPagados.add(itemId);
+        if (cuenta.pagadoCentavos > totalCuenta(cuenta)) anotar(evento, 'Se cobró más de lo que suma la cuenta');
+        break;
+      }
+      case 'cuenta_cerrada': {
+        const saldo = totalCuenta(cuenta) - cuenta.pagadoCentavos;
+        // Cerrar sin cobrar exige autorización; si llega así, queda a la vista.
+        if (saldo !== 0) anotar(evento, `Se cerró con un saldo de ${saldo} centavos`);
+        cuenta.estado = 'cerrada';
+        cuenta.cerradaEn = evento.creadoEnDispositivo;
+        break;
+      }
       case 'precuenta_emitida':
         cuenta.precuentas.push({
           id: evento.datos.precuentaId,
@@ -246,6 +299,10 @@ export function vistaDeMesas(estado: EstadoSalon): Map<string, VistaMesa> {
     else if (vista.cuentas.some((c) => c.pidioCuenta)) vista.estado = 'pidio_cuenta';
   }
   return porMesa;
+}
+
+export function saldoCuenta(cuenta: Cuenta): number {
+  return totalCuenta(cuenta) - cuenta.pagadoCentavos;
 }
 
 export function cuentasAbiertas(estado: EstadoSalon): Cuenta[] {

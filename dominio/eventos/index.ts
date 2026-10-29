@@ -22,6 +22,15 @@ const modificadorElegido = z.object({
   precioCentavos: centavos,
 });
 
+// El medio viaja con su nombre y si es efectivo: el arqueo de un turno se
+// tiene que poder rehacer aunque después se renombre o se archive el medio.
+const pago = z.object({
+  medioId: id,
+  nombre: z.string().min(1).max(40),
+  efectivo: z.boolean(),
+  montoCentavos: centavos,
+});
+
 const DEFINICIONES = {
   operador_cambiado: {
     agregado: 'dispositivo',
@@ -123,7 +132,50 @@ const DEFINICIONES = {
     accion: 'cocina.operar',
     datos: z.object({ envioId: id, estacionId: id }),
   },
-} as const satisfies Record<string, { agregado: 'dispositivo' | 'cuenta'; accion: Accion; datos: z.ZodType }>;
+
+  turno_abierto: {
+    agregado: 'turno',
+    accion: 'caja.operar',
+    datos: z.object({ fondoCentavos: centavos }),
+  },
+  salida_caja: {
+    agregado: 'turno',
+    accion: 'caja.operar',
+    datos: z.object({
+      salidaId: id,
+      tipo: z.enum(['retiro', 'egreso']),
+      montoCentavos: centavos.min(1),
+      motivo: z.string().trim().min(3, 'Escribí el motivo').max(140),
+    }),
+  },
+  // Arqueo ciego: quien cierra declara lo que contó sin haber visto lo esperado.
+  turno_cerrado: {
+    agregado: 'turno',
+    accion: 'caja.operar',
+    datos: z.object({ declarado: z.array(pago).max(20) }),
+  },
+  cobro_registrado: {
+    agregado: 'cuenta',
+    accion: 'caja.operar',
+    datos: z
+      .object({
+        cobroId: id,
+        turnoId: id,
+        division: z.enum(['total', 'partes', 'items']),
+        /** Cuánto de la cuenta salda este cobro; la propina va aparte. */
+        consumoCentavos: centavos,
+        propinaCentavos: centavos,
+        itemIds: z.array(id).max(200),
+        pagos: z.array(pago).min(1).max(10),
+      })
+      .refine((d) => d.pagos.reduce((s, p) => s + p.montoCentavos, 0) === d.consumoCentavos + d.propinaCentavos, 'Los pagos no suman lo cobrado'),
+  },
+  cuenta_cerrada: {
+    agregado: 'cuenta',
+    accion: 'caja.operar',
+    datos: z.object({}),
+  },
+} as const satisfies Record<string, { agregado: 'dispositivo' | 'cuenta' | 'turno'; accion: Accion; datos: z.ZodType }>;
 
 export type TipoEvento = keyof typeof DEFINICIONES;
 export const TIPOS_EVENTO = Object.keys(DEFINICIONES) as TipoEvento[];
@@ -160,6 +212,11 @@ export const esquemaEvento = z.discriminatedUnion('tipo', [
   variante('comanda_iniciada'),
   variante('comanda_lista'),
   variante('comanda_reabierta'),
+  variante('turno_abierto'),
+  variante('salida_caja'),
+  variante('turno_cerrado'),
+  variante('cobro_registrado'),
+  variante('cuenta_cerrada'),
 ]);
 
 export type EventoNuevo = z.infer<typeof esquemaEvento>;
