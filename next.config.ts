@@ -7,6 +7,8 @@ const idBuild = process.env.ID_BUILD ?? 'dev';
 const nextConfig: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
+  // Traen archivos propios (fuentes, wasm): se cargan como vienen, sin pasar por el bundler.
+  serverExternalPackages: ['@react-pdf/renderer', 'exceljs'],
   cacheComponents: true,
   partialPrefetching: true,
   env: { NEXT_PUBLIC_ID_BUILD: idBuild },

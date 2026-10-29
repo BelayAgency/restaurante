@@ -69,7 +69,7 @@ function aEvento(f: typeof eventos.$inferSelect): EventoNuevo {
  * saber si una anulación fue después de la precuenta hay que ver la cuenta
  * entera, aunque se haya abierto el día anterior.
  */
-async function eventosDelPeriodo(desde: string, hasta: string) {
+export async function eventosDelPeriodo(desde: string, hasta: string) {
   const { inicio, fin } = rango(desde, hasta);
   const delPeriodo = await db
     .select()

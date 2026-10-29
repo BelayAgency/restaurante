@@ -253,6 +253,18 @@ Pendiente de fases siguientes: reservas (sin módulo todavía), cierre de la cue
 
 **Fase 6** — hecha, sin desplegar. Autorizaciones por PIN de un rol superior con motivo de una lista (y texto opcional) para: anular un ítem enviado, descuentos, cortesías, cambiar un precio, reabrir una cuenta, cambiar el medio de pago de un cobro, modificar una cuenta después de la precuenta, cerrar sin cobrar y retiros o egresos de caja. Funciona sin red con los PIN y motivos del catálogo; el servidor vuelve a verificar quién autorizó, con qué rol y qué motivo, y rechaza lo que no cumple. Nada se borra: lo anulado queda tachado en la cuenta y en cocina. Control (`/control`, el dueño): «dónde se va la plata» por período con cada rubro en plata y cantidad, rankings por persona (quién hizo, quién autorizó, en las mesas de qué mozo, diferencias de caja por cajero, consumo por comensal) y el detalle de cada corrección. Alertas calculadas del log (anulación tras precuenta o fuera de horario, cerrada sin cobrar, descuento alto, diferencia de caja o de conteo, cuenta abierta hace demasiado) que se marcan como vistas. Configuración de quién autoriza cada acción, de los motivos y de los umbrales (supuestos: 3 h, 15 %, $1.000 de caja, $5.000 de conteo, de 11 a 2). Probado con `npm run test:integracion` y en pantalla.
 
+**Fase 7** — hecha, sin desplegar. Reportes (`/reportes`, dueño y encargado) por período: ventas, propinas, cuentas, ticket promedio y consumo por comensal; ventas por hora, por día, por día de la semana, por categoría, por plato y por mozo; platos que más y menos dejan (venta contra costo teórico de la receta); compras por proveedor; valorización del stock. Exportación a Excel (una hoja por reporte, la plata como número) y a PDF.
+
+## 10. Integraciones pendientes de relevar
+
+No se construyeron: dependen de respuestas del cliente.
+
+- **Facturación electrónica (ARCA).** Si la necesita: un worker aparte con la misma imagen (`image: ${APP_IMAGEN}` en `belay/docker-compose.extra.yml`) que toma los cobros de una cola en Postgres y pide el CAE. El cobro nunca espera a ARCA: si no responde, queda en la cola y se reintenta. Hace falta: CUIT, punto de venta, certificado y tipo de comprobante.
+- **Impresoras térmicas** (comandas por estación y precuentas). Una página web no le puede mandar ESC/POS a una impresora de red: hace falta el nodo local del restaurante (decisión 0.1), que reciba los eventos y los imprima. Hoy la precuenta se imprime con el diálogo del navegador.
+- **Cobro con QR o terminal** (Mercado Pago u otro). Hoy el medio se registra a mano. Integrarlo es leer el pago confirmado y registrar el cobro con su referencia.
+- **Reservas online.** Sin módulo, y por eso el plano todavía no muestra mesas reservadas.
+- **Delivery.** A confirmar con el cliente.
+
 Sin verificar todavía:
 - El modal de autorización por PIN en pantalla (la regla y la validación del servidor tienen tests).
 - La carga de formularios de stock de punta a punta en pantalla (la lógica está cubierta por el test de integración).

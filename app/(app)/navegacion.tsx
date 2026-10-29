@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Boxes, BookOpen, ShieldAlert, ChefHat, CircleDollarSign, LayoutGrid, PencilRuler, Tablet, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Boxes, BookOpen, ShieldAlert, ChefHat, CircleDollarSign, LayoutGrid, PencilRuler, Tablet, Users, type LucideIcon } from 'lucide-react';
 import { puede, type Accion } from '@/dominio/permisos';
 import { useSesion } from './sesion-cliente';
 
@@ -18,6 +18,7 @@ const SECCIONES: Seccion[] = [
   { href: '/cocina', texto: 'Cocina', icono: ChefHat, requiere: 'cocina.operar' },
   { href: '/caja', texto: 'Caja', icono: CircleDollarSign, requiere: 'caja.operar' },
   { href: '/stock', texto: 'Stock', icono: Boxes, requiere: 'stock.contar' },
+  { href: '/reportes', texto: 'Reportes', icono: BarChart3, requiere: 'reportes.ver' },
   { href: '/control', texto: 'Control', icono: ShieldAlert, requiere: 'control.ver' },
   { href: '/carta', texto: 'Carta', icono: BookOpen, requiere: 'carta.administrar' },
   { href: '/plano', texto: 'Plano', icono: PencilRuler, requiere: 'plano.administrar' },
