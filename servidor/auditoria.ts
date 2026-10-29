@@ -17,12 +17,13 @@ export type AccionAuditada =
   | 'dispositivo.registrado'
   | 'dispositivo.revocado'
   | 'carta.modificada'
-  | 'plano.modificado';
+  | 'plano.modificado'
+  | 'stock.modificado';
 
 export async function auditar(registro: {
   accion: AccionAuditada;
   actor: { id: string; esSoporte: boolean } | null;
-  objetivoTipo: 'usuario' | 'dispositivo' | 'carta' | 'plano';
+  objetivoTipo: 'usuario' | 'dispositivo' | 'carta' | 'plano' | 'stock';
   objetivoId: string;
   detalle?: Record<string, unknown>;
   ip?: string | null;

@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -332,3 +333,205 @@ export const diasOperativos = pgTable('dias_operativos', {
   cerradoPorId: text('cerrado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
   totales: jsonb('totales').$type<Record<string, unknown>>(),
 });
+
+// Stock. Se opera con conexión (decisión 0.6 de la planificación): un conteo
+// o una compra se cargan cuando vuelve internet. Las cantidades van en la
+// unidad base del insumo (g, ml o unidades) y los costos en centavos por
+// unidad base, con decimales: un mililitro de aceite cuesta fracciones de
+// centavo.
+
+const cantidad = (nombre: string) => numeric(nombre, { precision: 18, scale: 4, mode: 'number' });
+const costoUnitario = (nombre: string) => numeric(nombre, { precision: 18, scale: 6, mode: 'number' });
+
+export const unidadBase = pgEnum('unidad_base', ['g', 'ml', 'u']);
+export const tipoInsumo = pgEnum('tipo_insumo', ['compra', 'preparacion']);
+
+export const depositos = pgTable('depositos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  // De dónde sale lo que se vende: el consumo teórico se descuenta de acá.
+  deVenta: boolean('de_venta').notNull().default(false),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const insumos = pgTable('insumos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  tipo: tipoInsumo('tipo').notNull().default('compra'),
+  unidad: unidadBase('unidad').notNull(),
+  stockMinimo: cantidad('stock_minimo').notNull().default(0),
+  costoUnitario: costoUnitario('costo_unitario').notNull().default(0),
+  archivadoEn: momento('archivado_en'),
+});
+
+// Cómo se compra: «Bidón 5 L» son 5000 ml del insumo aceite.
+export const presentaciones = pgTable('presentaciones', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  insumoId: uuid('insumo_id')
+    .notNull()
+    .references(() => insumos.id),
+  nombre: text('nombre').notNull(),
+  cantidadBase: cantidad('cantidad_base').notNull(),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const historialCostos = pgTable(
+  'historial_costos',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    insumoId: uuid('insumo_id')
+      .notNull()
+      .references(() => insumos.id),
+    costoUnitario: costoUnitario('costo_unitario').notNull(),
+    motivo: text('motivo').notNull(),
+    referenciaId: text('referencia_id'),
+    desde: momento('desde').notNull().defaultNow(),
+  },
+  (t) => [index('historial_costos_insumo_idx').on(t.insumoId, t.desde)],
+);
+
+// Una receta es de un producto de la carta o de una preparación (un insumo
+// que se elabora). No se edita: se archiva y se crea otra, así el consumo
+// teórico de una venta vieja se calcula con la receta de ese momento.
+export const recetas = pgTable(
+  'recetas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productoId: uuid('producto_id').references(() => productos.id),
+    preparacionId: uuid('preparacion_id').references(() => insumos.id),
+    /** Cuánto rinde, en la unidad de la preparación. Para un producto, 1 porción. */
+    rendimiento: cantidad('rendimiento').notNull().default(1),
+    vigenteDesde: momento('vigente_desde').notNull().defaultNow(),
+    archivadoEn: momento('archivado_en'),
+    creadoPorId: text('creado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    uniqueIndex('receta_producto_vigente_idx').on(t.productoId).where(sql`${t.archivadoEn} is null and ${t.productoId} is not null`),
+    uniqueIndex('receta_preparacion_vigente_idx').on(t.preparacionId).where(sql`${t.archivadoEn} is null and ${t.preparacionId} is not null`),
+  ],
+);
+
+export const lineasReceta = pgTable(
+  'lineas_receta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recetaId: uuid('receta_id')
+      .notNull()
+      .references(() => recetas.id),
+    insumoId: uuid('insumo_id')
+      .notNull()
+      .references(() => insumos.id),
+    cantidad: cantidad('cantidad').notNull(),
+    /** Lo que se pierde al limpiar o cocinar, en porcentaje: hace falta más bruto que neto. */
+    mermaPorcentaje: numeric('merma_porcentaje', { precision: 5, scale: 2, mode: 'number' }).notNull().default(0),
+  },
+  (t) => [index('lineas_receta_idx').on(t.recetaId)],
+);
+
+export const proveedores = pgTable('proveedores', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  cuit: text('cuit'),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const compras = pgTable('compras', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  proveedorId: uuid('proveedor_id')
+    .notNull()
+    .references(() => proveedores.id),
+  depositoId: uuid('deposito_id')
+    .notNull()
+    .references(() => depositos.id),
+  numeroFactura: text('numero_factura').notNull(),
+  fecha: text('fecha').notNull(),
+  totalCentavos: bigint('total_centavos', { mode: 'number' }).notNull(),
+  registradaPorId: text('registrada_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  registradaEn: momento('registrada_en').notNull().defaultNow(),
+});
+
+export const lineasCompra = pgTable('lineas_compra', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  compraId: uuid('compra_id')
+    .notNull()
+    .references(() => compras.id),
+  insumoId: uuid('insumo_id')
+    .notNull()
+    .references(() => insumos.id),
+  presentacionId: uuid('presentacion_id').references(() => presentaciones.id),
+  cantidadPresentaciones: cantidad('cantidad_presentaciones').notNull(),
+  cantidadBase: cantidad('cantidad_base').notNull(),
+  costoCentavos: bigint('costo_centavos', { mode: 'number' }).notNull(),
+});
+
+export const tipoMovimiento = pgEnum('tipo_movimiento', [
+  'venta_teorica',
+  'compra',
+  'produccion_salida',
+  'produccion_entrada',
+  'transferencia_salida',
+  'transferencia_entrada',
+  'merma',
+  'vencimiento',
+  'comida_personal',
+  'ajuste_conteo',
+]);
+
+// El stock es la suma de esto. Append-only como el log: una corrección es
+// otro movimiento.
+export const movimientosStock = pgTable(
+  'movimientos_stock',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    insumoId: uuid('insumo_id')
+      .notNull()
+      .references(() => insumos.id),
+    depositoId: uuid('deposito_id')
+      .notNull()
+      .references(() => depositos.id),
+    tipo: tipoMovimiento('tipo').notNull(),
+    cantidad: cantidad('cantidad').notNull(),
+    costoUnitario: costoUnitario('costo_unitario').notNull(),
+    motivo: text('motivo'),
+    referenciaTipo: text('referencia_tipo'),
+    referenciaId: text('referencia_id'),
+    actorId: text('actor_id'),
+    ocurridoEn: momento('ocurrido_en').notNull(),
+    registradoEn: momento('registrado_en').notNull().defaultNow(),
+  },
+  (t) => [
+    index('movimientos_insumo_idx').on(t.insumoId, t.depositoId),
+    index('movimientos_fecha_idx').on(t.ocurridoEn),
+    // El consumo teórico de un ítem se genera una sola vez aunque el evento se reciba de nuevo.
+    uniqueIndex('movimientos_referencia_idx').on(t.referenciaTipo, t.referenciaId, t.insumoId, t.tipo),
+  ],
+);
+
+export const conteos = pgTable('conteos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  depositoId: uuid('deposito_id')
+    .notNull()
+    .references(() => depositos.id),
+  alcance: text('alcance').notNull(),
+  abiertoPorId: text('abierto_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  abiertoEn: momento('abierto_en').notNull().defaultNow(),
+  cerradoPorId: text('cerrado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  cerradoEn: momento('cerrado_en'),
+});
+
+export const lineasConteo = pgTable(
+  'lineas_conteo',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conteoId: uuid('conteo_id')
+      .notNull()
+      .references(() => conteos.id),
+    insumoId: uuid('insumo_id')
+      .notNull()
+      .references(() => insumos.id),
+    contado: cantidad('contado'),
+    // Se fija al cerrar, no al abrir: mientras se cuenta nadie lo ve.
+    teorico: cantidad('teorico'),
+  },
+  (t) => [uniqueIndex('lineas_conteo_idx').on(t.conteoId, t.insumoId)],
+);

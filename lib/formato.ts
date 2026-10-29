@@ -53,3 +53,14 @@ export function textoDesdeCentavos(centavos: number): string {
   const resto = centavos % 100;
   return `${(centavos - resto) / 100},${String(resto).padStart(2, '0')}`;
 }
+
+/** `1234,5` (lo que entrega CampoNumero) → `1234.5`. Para cantidades, no para plata. `null` si está vacío. */
+export function numeroDesdeTexto(limpio: string): number | null {
+  if (!/^\d+(,\d*)?$/.test(limpio)) return null;
+  return Number(limpio.replace(',', '.'));
+}
+
+/** `1234.5` → `1234,5`, el formato que recibe CampoNumero. */
+export function textoDesdeNumero(valor: number): string {
+  return String(Math.round(valor * 10_000) / 10_000).replace('.', ',');
+}

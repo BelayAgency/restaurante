@@ -13,7 +13,8 @@
     "db:migrar": "node --env-file=.env scripts/dist/migrar.cjs",
     "build:scripts": "esbuild scripts/migrar.ts scripts/sembrar.ts --bundle --platform=node --target=node24 --format=cjs --outdir=scripts/dist --out-extension:.js=.cjs --external:@node-rs/argon2",
     "mails:simulado": "node scripts/mails-simulado.mjs",
-    "db:sembrar": "node --env-file=.env scripts/dist/sembrar.cjs"
+    "db:sembrar": "node --env-file=.env scripts/dist/sembrar.cjs",
+    "test:integracion": "vitest run --config vitest.integracion.config.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

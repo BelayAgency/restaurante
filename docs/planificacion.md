@@ -251,7 +251,10 @@ Pendiente de fases siguientes: anular un ítem ya enviado (necesita la autorizac
 
 Pendiente de la fase 6: autorización por PIN para retiros, egresos, cambiar el medio de pago de un cobro y cerrar una cuenta sin cobrar (hoy no se puede: sólo se cierra al saldarse).
 
+**Fase 5** — hecha, sin desplegar. Stock (`/stock`, con conexión): insumos en g, ml o unidades con sus presentaciones de compra, depósitos (supuesto: cocina, cámara, barra y bodega; la cocina es de donde sale lo vendido), proveedores. Recetas con merma y rendimiento, versionadas como los precios, con costo teórico, food cost y margen de cada plato; preparaciones intermedias con su receta, que se elaboran con una producción. Compras que suman stock y recalculan el costo promedio ponderado. Bajas con motivo (merma, vencimiento, comida del personal, cada una por separado) y transferencias entre depósitos. Consumo teórico automático al enviar a cocina, con la receta vigente en ese momento y una sola vez por ítem. Conteos ciegos, totales o parciales: quien cuenta no ve el teórico; al cerrar se ajusta el stock y queda la diferencia. Teórico vs. real por período. Los movimientos de stock tampoco se modifican ni se borran. Probado con `npm run test:integracion` contra la base y en pantalla.
+
 Sin verificar todavía:
+- La carga de formularios de stock de punta a punta en pantalla (la lógica está cubierta por el test de integración).
 - El aviso sonoro de cocina (el navegador de esta sesión no reproduce audio).
 - El service worker: el navegador embebido de esta sesión no deja registrar ninguno. Probar en Chrome: que se registre, que la app abra sin red y que lo cargado sin red salga al volver.
 - La prueba con DevTools en modo offline (el panel del navegador de esta sesión no lo permite): abrir la app sin red, cambiar de operador y ver que la bandeja se vacía al volver.

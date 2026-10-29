@@ -10,6 +10,7 @@ import type { Catalogo } from '@/dominio/catalogo';
 import { auditar } from './auditoria';
 import { leerCatalogo } from './catalogo';
 import { diaAbierto, estadoTurnos } from './dia';
+import { registrarConsumoTeorico } from './stock';
 
 export type Recepcion =
   | { id: string; resultado: 'aceptado'; secuencia: number }
@@ -188,6 +189,11 @@ export async function recibirEventos(actor: UsuarioSesion, dispositivoId: string
         columns: { secuencia: true, resultado: true, motivoRechazo: true },
       }));
     if (!fila) continue;
+    // Recién aceptado: lo que salió a cocina descuenta del stock según la receta.
+    // Si falla, la venta no se pierde: queda en el log y el error en el registro del servidor.
+    if (insertado?.resultado === 'aceptado' && evento.tipo === 'items_enviados') {
+      await registrarConsumoTeorico(evento).catch((error: unknown) => console.error('[stock] consumo teórico', error));
+    }
     recepciones.push(
       fila.resultado === 'aceptado'
         ? { id: evento.id, resultado: 'aceptado', secuencia: fila.secuencia }
