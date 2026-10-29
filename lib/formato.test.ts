@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fechaCorta, nombrePeriodo, pesosDesdeCentavos } from './formato';
+import { centavosDesdeTexto, fechaCorta, nombrePeriodo, pesosDesdeCentavos, textoDesdeCentavos } from './formato';
 
 describe('pesosDesdeCentavos', () => {
   it('separa miles con punto y centavos con coma', () => {
@@ -21,5 +21,16 @@ describe('fechas', () => {
 
   it('nombra el período', () => {
     expect(nombrePeriodo('2026-09')).toBe('septiembre 2026');
+  });
+});
+
+describe('centavos y texto', () => {
+  it('va y vuelve sin perder un centavo', () => {
+    expect(centavosDesdeTexto('1234,5')).toBe(123450);
+    expect(centavosDesdeTexto('1234')).toBe(123400);
+    expect(centavosDesdeTexto('0,07')).toBe(7);
+    expect(centavosDesdeTexto('')).toBeNull();
+    expect(centavosDesdeTexto('12,345')).toBeNull();
+    expect(textoDesdeCentavos(123450)).toBe('1234,50');
   });
 });

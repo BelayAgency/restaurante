@@ -236,6 +236,16 @@ Las fases 0 y 1 son las largas y no muestran nada del restaurante todavía: es a
 - Recuperación por código y cambio de credenciales: código hasheado, 15 minutos, 5 intentos; soporte sobre otra cuenta → el código va a `info@belay.agency` y el aviso a la persona; todo cambio de contraseña cierra todas las sesiones; cada acción queda en `auditoria`.
 - Log de eventos inmutable en la base (trigger), recepción idempotente, rechazados guardados con motivo y no repartidos, dispositivo sin registrar → 403, canal en vivo por LISTEN/NOTIFY.
 
+**Fase 2** — hecha, sin desplegar. Probado en el build de producción:
+- Carta: estaciones, categorías, productos con precio versionado (cambiarlo archiva el anterior) y grupos de modificadores.
+- Editor del plano (Konva): sectores, mesas redondas y rectangulares, paredes, barra, columnas, puerta y cocina; arrastrar con imán a la grilla, girar, redimensionar; guardado con auditoría y mesas archivadas, nunca borradas.
+- Salón: el mapa con el estado de cada mesa (libre, ocupada, pidió la cuenta, precuenta, dos cuentas), abrir mesa con mozo y comensales, cargar desde la carta con modificadores obligatorios, enviar a cocina, precuenta imprimible, mover, unir, pasar ítems y cambiar de mozo. Cuentas de mostrador y para llevar.
+- El servidor rechaza un ítem cuyo precio no coincide con la carta.
+- A 320 px de ancho.
+
+Pendiente de fases siguientes: anular un ítem ya enviado (necesita la autorización por PIN de la fase 6), mesa demorada (necesita los estados de cocina de la fase 3), reservas (sin módulo todavía), cierre de la cuenta (cobro, fase 4).
+
 Sin verificar todavía:
+- El service worker: el navegador embebido de esta sesión no deja registrar ninguno. Probar en Chrome: que se registre, que la app abra sin red y que lo cargado sin red salga al volver.
 - La prueba con DevTools en modo offline (el panel del navegador de esta sesión no lo permite): abrir la app sin red, cambiar de operador y ver que la bandeja se vacía al volver.
 - El cambio de operador por PIN de punta a punta en pantalla (el reductor y el PIN tienen tests).

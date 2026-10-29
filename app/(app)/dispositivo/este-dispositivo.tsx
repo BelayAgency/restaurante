@@ -11,6 +11,7 @@ import { Selector } from '@/components/selector';
 import { useToast } from '@/components/toast';
 import { Aviso, EstadoVacio, FilaDato, Insignia, Mono, Tabla, Tarjeta, Td, Th, TituloSeccion } from '@/components/ui';
 import type { EventoNuevo } from '@/dominio/eventos';
+import { NOMBRE_EVENTO } from '@/dominio/eventos/textos';
 import { puede } from '@/dominio/permisos';
 import { verificarPin } from '@/dominio/pin';
 import { pinBloqueado, reducirDispositivo } from '@/dominio/reductores/dispositivo';
@@ -21,11 +22,6 @@ import { registrarEvento, sincronizar } from '@/local/sync';
 import { useEstadoSync } from '../motor-sync';
 import { useSesion } from '../sesion-cliente';
 import { accionRegistrarDispositivo } from './acciones';
-
-const TEXTO_EVENTO: Record<EventoNuevo['tipo'], string> = {
-  operador_cambiado: 'Cambio de operador',
-  pin_fallido: 'PIN incorrecto',
-};
 
 const PROBLEMA: Record<'sesion' | 'dispositivo' | 'suspendido', string> = {
   sesion: 'La sesión de este dispositivo venció. Volvé a iniciar sesión para que se sincronice.',
@@ -259,7 +255,7 @@ export function EsteDispositivo() {
         <Aviso tono="error" titulo="Eventos rechazados por el servidor">
           {datos.rechazados.map((r) => (
             <span key={r.id} className="block">
-              {TEXTO_EVENTO[r.evento.tipo]} · {fechaHora(r.evento.creadoEnDispositivo)}: {r.motivo}
+              {NOMBRE_EVENTO[r.evento.tipo]} · {fechaHora(r.evento.creadoEnDispositivo)}: {r.motivo}
             </span>
           ))}
         </Aviso>
@@ -283,7 +279,7 @@ export function EsteDispositivo() {
               <tbody>
                 {recientes.map(({ evento, estado: e }) => (
                   <tr key={evento.id}>
-                    <Td>{TEXTO_EVENTO[evento.tipo]}</Td>
+                    <Td>{NOMBRE_EVENTO[evento.tipo]}</Td>
                     <Td>{nombreDe(evento.operadorId)}</Td>
                     <Td className="tabular-nums">{fechaHora(evento.creadoEnDispositivo)}</Td>
                     <Td>{e === 'pendiente' ? <Insignia tono="alerta">Sin enviar</Insignia> : <Insignia tono="neutro">Sincronizado</Insignia>}</Td>

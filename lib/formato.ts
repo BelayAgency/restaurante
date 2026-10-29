@@ -40,3 +40,16 @@ const FECHA_HORA = new Intl.DateTimeFormat('es-AR', {
 export function fechaHora(momento: Date | string): string {
   return FECHA_HORA.format(typeof momento === 'string' ? new Date(momento) : momento);
 }
+
+/** `1234,5` (lo que entrega CampoNumero) → `123450`. Sin floats: se separa el texto. `null` si no es un importe. */
+export function centavosDesdeTexto(limpio: string): number | null {
+  if (!/^\d+(,\d{0,2})?$/.test(limpio)) return null;
+  const [enteros, decimales = ''] = limpio.split(',');
+  return Number(enteros) * 100 + Number(decimales.padEnd(2, '0'));
+}
+
+/** `123450` → `1234,50`, el formato que recibe CampoNumero. */
+export function textoDesdeCentavos(centavos: number): string {
+  const resto = centavos % 100;
+  return `${(centavos - resto) / 100},${String(resto).padStart(2, '0')}`;
+}

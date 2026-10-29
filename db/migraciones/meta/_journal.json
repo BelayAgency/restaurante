@@ -15,6 +15,13 @@
       "when": 1793234284165,
       "tag": "0001_log_inmutable",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793236625737,
+      "tag": "0002_salon_y_carta",
+      "breakpoints": true
     }
   ]
 }

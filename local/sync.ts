@@ -1,5 +1,6 @@
 import { definicion, esquemaEvento, type EventoConfirmado, type EventoNuevo, MAX_EVENTOS_POR_ENVIO } from '@/dominio/eventos';
 import { puede } from '@/dominio/permisos';
+import type { Catalogo } from '@/dominio/catalogo';
 import type { Rol } from '@/dominio/roles';
 import { baseLocal, guardarAjuste, leerAjuste } from './base';
 
@@ -121,11 +122,11 @@ async function traer(dispositivoId: string) {
 async function traerCatalogo(dispositivoId: string) {
   const respuesta = await fetch(`/api/sync/catalogo?dispositivo=${dispositivoId}`, { cache: 'no-store' });
   if (!respuesta.ok) return;
-  const { operadores } = (await respuesta.json()) as { operadores: { id: string; nombre: string; rol: Rol; pinHash: string | null }[] };
-  await baseLocal.transaction('rw', baseLocal.operadores, baseLocal.ajustes, async () => {
+  const catalogo = (await respuesta.json()) as Catalogo;
+  await baseLocal.transaction('rw', baseLocal.operadores, baseLocal.catalogo, async () => {
     await baseLocal.operadores.clear();
-    await baseLocal.operadores.bulkPut(operadores);
-    await guardarAjuste('catalogo_actualizado', new Date().toISOString());
+    await baseLocal.operadores.bulkPut(catalogo.operadores);
+    await baseLocal.catalogo.put({ clave: 'actual', valor: catalogo, actualizadoEn: new Date().toISOString() });
   });
 }
 

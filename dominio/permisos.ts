@@ -12,6 +12,9 @@ export type Accion =
   | 'dispositivos.registrar'
   | 'dispositivos.administrar'
   | 'operador.cambiar'
+  | 'salon.operar'
+  | 'carta.administrar'
+  | 'plano.administrar'
   | 'control.ver';
 
 const PERMISOS: Record<Accion, readonly Rol[]> = {
@@ -20,6 +23,9 @@ const PERMISOS: Record<Accion, readonly Rol[]> = {
   'dispositivos.registrar': ['dueno', 'encargado'],
   'dispositivos.administrar': ['dueno'],
   'operador.cambiar': ['dueno', 'encargado', 'cajero', 'mozo', 'cocina', 'stock'],
+  'salon.operar': ['dueno', 'encargado', 'cajero', 'mozo'],
+  'carta.administrar': ['dueno', 'encargado'],
+  'plano.administrar': ['dueno'],
   'control.ver': ['dueno'],
 };
 

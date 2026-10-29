@@ -34,7 +34,7 @@ export function TituloSeccion({
   accion?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div>
         <h2 className="text-lg font-semibold text-tinta">{children}</h2>
         {descripcion ? <p className="mt-1 text-sm text-tinta-tenue">{descripcion}</p> : null}

@@ -8,9 +8,19 @@ import type { Accion } from '../permisos';
  * ("se agregó el ítem X"), nunca estados que se pisan ("la mesa tiene estos
  * ítems"): así dos dispositivos sin red no se pisan.
  *
- * Agregar un tipo es agregarlo a `DEFINICIONES`. El esquema de `datos` y la
- * acción que exige viajan juntos para que no haya tipo sin regla.
+ * Agregar un tipo es agregarlo a `DEFINICIONES` y a `esquemaEvento`. El
+ * esquema de `datos` y la acción que exige viajan juntos para que no haya
+ * tipo sin regla.
  */
+
+const id = z.uuid();
+const centavos = z.number().int().min(0).max(1_000_000_000);
+
+const modificadorElegido = z.object({
+  modificadorId: id,
+  nombre: z.string().min(1).max(80),
+  precioCentavos: centavos,
+});
 
 const DEFINICIONES = {
   operador_cambiado: {
@@ -23,15 +33,87 @@ const DEFINICIONES = {
     accion: 'operador.cambiar',
     datos: z.object({ usuarioIntentadoId: z.string().min(1) }),
   },
-} as const satisfies Record<string, { agregado: string; accion: Accion; datos: z.ZodType }>;
+
+  cuenta_abierta: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z
+      .object({
+        tipo: z.enum(['mesa', 'mostrador', 'llevar']),
+        mesaId: id.nullable(),
+        mozoId: z.string().min(1),
+        // Obligatorio en una mesa: después se cruzan cubiertos contra consumo.
+        comensales: z.number().int().min(1).max(99),
+        nombre: z.string().trim().max(60).nullable(),
+      })
+      .refine((d) => (d.tipo === 'mesa') === (d.mesaId !== null), 'Una cuenta de mesa necesita su mesa, y sólo ella'),
+  },
+  item_agregado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    // Viaja con nombre, precio y estación tal como estaban en el dispositivo:
+    // sin red no hay otra fuente, y lo cobrado tiene que ser lo que se vio.
+    datos: z.object({
+      itemId: id,
+      productoId: id,
+      precioId: id,
+      nombre: z.string().min(1).max(80),
+      precioCentavos: centavos,
+      estacionId: id,
+      cantidad: z.number().int().min(1).max(99),
+      modificadores: z.array(modificadorElegido).max(20),
+      nota: z.string().trim().max(140).nullable(),
+    }),
+  },
+  item_quitado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ itemId: id }),
+  },
+  items_enviados: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ envioId: id, itemIds: z.array(id).min(1).max(200) }),
+  },
+  cuenta_movida: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ mesaDestinoId: id }),
+  },
+  cuentas_unidas: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ cuentaOrigenId: id }),
+  },
+  items_transferidos: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ cuentaDestinoId: id, itemIds: z.array(id).min(1).max(200) }),
+  },
+  mozo_cambiado: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ mozoId: z.string().min(1) }),
+  },
+  cuenta_pedida: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({}),
+  },
+  precuenta_emitida: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({ precuentaId: id, totalCentavos: centavos }),
+  },
+} as const satisfies Record<string, { agregado: 'dispositivo' | 'cuenta'; accion: Accion; datos: z.ZodType }>;
 
 export type TipoEvento = keyof typeof DEFINICIONES;
 export const TIPOS_EVENTO = Object.keys(DEFINICIONES) as TipoEvento[];
 
 const sobre = z.object({
-  id: z.uuid(),
+  id,
   version: z.literal(1),
-  dispositivoId: z.uuid(),
+  dispositivoId: id,
   operadorId: z.string().min(1),
   autorizadoPorId: z.string().min(1).nullable(),
   motivoId: z.string().min(1).nullable(),
@@ -40,12 +122,27 @@ const sobre = z.object({
   agregadoId: z.string().min(1),
 });
 
+function variante<T extends TipoEvento>(tipo: T) {
+  return sobre.extend({ tipo: z.literal(tipo), datos: DEFINICIONES[tipo].datos as (typeof DEFINICIONES)[T]['datos'] });
+}
+
 export const esquemaEvento = z.discriminatedUnion('tipo', [
-  sobre.extend({ tipo: z.literal('operador_cambiado'), datos: DEFINICIONES.operador_cambiado.datos }),
-  sobre.extend({ tipo: z.literal('pin_fallido'), datos: DEFINICIONES.pin_fallido.datos }),
+  variante('operador_cambiado'),
+  variante('pin_fallido'),
+  variante('cuenta_abierta'),
+  variante('item_agregado'),
+  variante('item_quitado'),
+  variante('items_enviados'),
+  variante('cuenta_movida'),
+  variante('cuentas_unidas'),
+  variante('items_transferidos'),
+  variante('mozo_cambiado'),
+  variante('cuenta_pedida'),
+  variante('precuenta_emitida'),
 ]);
 
 export type EventoNuevo = z.infer<typeof esquemaEvento>;
+export type DatosDe<T extends TipoEvento> = Extract<EventoNuevo, { tipo: T }>['datos'];
 
 /** Un evento tal como lo devuelve el servidor: con su lugar en el orden global. */
 export type EventoConfirmado = EventoNuevo & {

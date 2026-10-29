@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { EventoConfirmado, EventoNuevo } from '@/dominio/eventos';
+import type { Catalogo } from '@/dominio/catalogo';
 import type { Rol } from '@/dominio/roles';
 
 /**
@@ -30,9 +31,16 @@ export interface OperadorLocal {
   pinHash: string | null;
 }
 
+/** El catálogo entero en una fila: se reemplaza completo en cada sincronización. */
+export interface CatalogoGuardado {
+  clave: 'actual';
+  valor: Catalogo;
+  actualizadoEn: string;
+}
+
 /** Valores sueltos del dispositivo: su id, el cursor, el operador activo. */
 export interface Ajuste {
-  clave: 'dispositivo' | 'cursor' | 'operador' | 'catalogo_actualizado' | 'contacto';
+  clave: 'dispositivo' | 'cursor' | 'operador' | 'contacto';
   valor: string;
 }
 
@@ -42,6 +50,7 @@ class BaseLocal extends Dexie {
   rechazados!: EntityTable<EventoRechazado, 'id'>;
   operadores!: EntityTable<OperadorLocal, 'id'>;
   ajustes!: EntityTable<Ajuste, 'clave'>;
+  catalogo!: EntityTable<CatalogoGuardado, 'clave'>;
 
   constructor() {
     super('restaurante');
@@ -52,6 +61,7 @@ class BaseLocal extends Dexie {
       operadores: 'id, nombre',
       ajustes: 'clave',
     });
+    this.version(2).stores({ catalogo: 'clave' });
   }
 }
 

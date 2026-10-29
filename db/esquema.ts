@@ -180,3 +180,133 @@ export const eventos = pgTable(
     index('eventos_rechazados_idx').on(t.recibidoEn).where(sql`${t.resultado} = 'rechazado'`),
   ],
 );
+
+// Salón y carta. Es configuración: se edita con conexión y baja a los
+// dispositivos con el catálogo. Nada se borra: lo que deja de usarse se
+// archiva, porque los eventos viejos lo siguen nombrando.
+
+export const sectores = pgTable('sectores', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  orden: integer('orden').notNull().default(0),
+  ancho: integer('ancho').notNull().default(1200),
+  alto: integer('alto').notNull().default(800),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const tipoElementoPlano = pgEnum('tipo_elemento_plano', ['mesa', 'pared', 'barra', 'columna', 'puerta', 'cocina']);
+export const formaElemento = pgEnum('forma_elemento', ['redonda', 'rectangular']);
+
+export const elementosPlano = pgTable(
+  'elementos_plano',
+  {
+    id: uuid('id').primaryKey(),
+    sectorId: uuid('sector_id')
+      .notNull()
+      .references(() => sectores.id),
+    tipo: tipoElementoPlano('tipo').notNull(),
+    forma: formaElemento('forma').notNull().default('rectangular'),
+    x: integer('x').notNull(),
+    y: integer('y').notNull(),
+    ancho: integer('ancho').notNull(),
+    alto: integer('alto').notNull(),
+    rotacion: integer('rotacion').notNull().default(0),
+    numeroMesa: integer('numero_mesa'),
+    capacidad: integer('capacidad'),
+    archivadoEn: momento('archivado_en'),
+  },
+  (t) => [
+    index('elementos_sector_idx').on(t.sectorId),
+    // Dos mesas activas con el mismo número serían dos lugares para la misma comanda.
+    uniqueIndex('mesas_numero_activo_idx').on(t.numeroMesa).where(sql`${t.tipo} = 'mesa' and ${t.archivadoEn} is null`),
+  ],
+);
+
+export const estaciones = pgTable('estaciones', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  orden: integer('orden').notNull().default(0),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const categorias = pgTable('categorias', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  orden: integer('orden').notNull().default(0),
+  archivadoEn: momento('archivado_en'),
+});
+
+export const productos = pgTable(
+  'productos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    nombre: text('nombre').notNull(),
+    categoriaId: uuid('categoria_id')
+      .notNull()
+      .references(() => categorias.id),
+    estacionId: uuid('estacion_id')
+      .notNull()
+      .references(() => estaciones.id),
+    disponible: boolean('disponible').notNull().default(true),
+    orden: integer('orden').notNull().default(0),
+    creadoEn: momento('creado_en').notNull().defaultNow(),
+    archivadoEn: momento('archivado_en'),
+  },
+  (t) => [index('productos_categoria_idx').on(t.categoriaId)],
+);
+
+// Un precio no se edita: se archiva y se crea otro. Lo que se cobró en cada
+// momento queda en la fila que estaba vigente.
+export const preciosProducto = pgTable(
+  'precios_producto',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productoId: uuid('producto_id')
+      .notNull()
+      .references(() => productos.id),
+    precioCentavos: bigint('precio_centavos', { mode: 'number' }).notNull(),
+    vigenteDesde: momento('vigente_desde').notNull().defaultNow(),
+    archivadoEn: momento('archivado_en'),
+    creadoPorId: text('creado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  },
+  (t) => [uniqueIndex('precio_vigente_idx').on(t.productoId).where(sql`${t.archivadoEn} is null`)],
+);
+
+export const gruposModificador = pgTable('grupos_modificador', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  obligatorio: boolean('obligatorio').notNull().default(false),
+  multiple: boolean('multiple').notNull().default(false),
+  archivadoEn: momento('archivado_en'),
+});
+
+// El precio de un modificador sigue la misma regla que el de un producto:
+// cambiarlo es archivar la opción y crear otra.
+export const modificadores = pgTable(
+  'modificadores',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    grupoId: uuid('grupo_id')
+      .notNull()
+      .references(() => gruposModificador.id),
+    nombre: text('nombre').notNull(),
+    precioCentavos: bigint('precio_centavos', { mode: 'number' }).notNull().default(0),
+    orden: integer('orden').notNull().default(0),
+    archivadoEn: momento('archivado_en'),
+  },
+  (t) => [index('modificadores_grupo_idx').on(t.grupoId)],
+);
+
+export const productosGrupos = pgTable(
+  'productos_grupos',
+  {
+    productoId: uuid('producto_id')
+      .notNull()
+      .references(() => productos.id),
+    grupoId: uuid('grupo_id')
+      .notNull()
+      .references(() => gruposModificador.id),
+    orden: integer('orden').notNull().default(0),
+  },
+  (t) => [uniqueIndex('productos_grupos_idx').on(t.productoId, t.grupoId)],
+);

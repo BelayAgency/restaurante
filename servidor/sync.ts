@@ -1,12 +1,14 @@
 import 'server-only';
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { db } from '@/db/cliente';
-import { dispositivos, eventos, pinesOperador, usuarios } from '@/db/esquema';
+import { dispositivos, elementosPlano, eventos, modificadores, preciosProducto, productos, usuarios } from '@/db/esquema';
 import { definicion, type EventoConfirmado, type EventoNuevo } from '@/dominio/eventos';
 import { puede } from '@/dominio/permisos';
 import { esRol, type Rol } from '@/dominio/roles';
 import { ErrorAcceso, ErrorDominio, type UsuarioSesion } from '@/lib/sesion';
+import type { Catalogo } from '@/dominio/catalogo';
 import { auditar } from './auditoria';
+import { leerCatalogo } from './catalogo';
 
 export type Recepcion =
   | { id: string; resultado: 'aceptado'; secuencia: number }
@@ -18,20 +20,95 @@ async function dispositivoVigente(id: string) {
   return fila;
 }
 
+interface Referencias {
+  usuarios: Map<string, { rol: Rol; activo: boolean }>;
+  precios: Map<string, { productoId: string; precioCentavos: number }>;
+  productos: Map<string, { estacionId: string }>;
+  modificadores: Map<string, number>;
+  mesas: Set<string>;
+}
+
+/** Todo lo que el lote nombra, traído de una vez y no evento por evento. */
+async function referenciasDe(lote: EventoNuevo[]): Promise<Referencias> {
+  const idsUsuarios = new Set<string>();
+  const idsPrecios = new Set<string>();
+  const idsProductos = new Set<string>();
+  const idsModificadores = new Set<string>();
+  const idsMesas = new Set<string>();
+  for (const e of lote) {
+    idsUsuarios.add(e.operadorId);
+    if (e.tipo === 'cuenta_abierta') {
+      idsUsuarios.add(e.datos.mozoId);
+      if (e.datos.mesaId) idsMesas.add(e.datos.mesaId);
+    }
+    if (e.tipo === 'mozo_cambiado') idsUsuarios.add(e.datos.mozoId);
+    if (e.tipo === 'cuenta_movida') idsMesas.add(e.datos.mesaDestinoId);
+    if (e.tipo === 'item_agregado') {
+      idsPrecios.add(e.datos.precioId);
+      idsProductos.add(e.datos.productoId);
+      for (const m of e.datos.modificadores) idsModificadores.add(m.modificadorId);
+    }
+  }
+  const lista = <T,>(s: Set<T>) => [...s];
+  const [filasUsuarios, filasPrecios, filasProductos, filasModificadores, filasMesas] = await Promise.all([
+    idsUsuarios.size ? db.select({ id: usuarios.id, rol: usuarios.rol, activo: usuarios.activo }).from(usuarios).where(inArray(usuarios.id, lista(idsUsuarios))) : [],
+    idsPrecios.size ? db.select().from(preciosProducto).where(inArray(preciosProducto.id, lista(idsPrecios))) : [],
+    idsProductos.size ? db.select({ id: productos.id, estacionId: productos.estacionId }).from(productos).where(inArray(productos.id, lista(idsProductos))) : [],
+    idsModificadores.size ? db.select({ id: modificadores.id, precioCentavos: modificadores.precioCentavos }).from(modificadores).where(inArray(modificadores.id, lista(idsModificadores))) : [],
+    idsMesas.size
+      ? db.select({ id: elementosPlano.id }).from(elementosPlano).where(and(inArray(elementosPlano.id, lista(idsMesas)), eq(elementosPlano.tipo, 'mesa')))
+      : [],
+  ]);
+  return {
+    usuarios: new Map(filasUsuarios.filter((u) => esRol(u.rol)).map((u) => [u.id, { rol: u.rol as Rol, activo: u.activo }])),
+    precios: new Map(filasPrecios.map((p) => [p.id, { productoId: p.productoId, precioCentavos: p.precioCentavos }])),
+    productos: new Map(filasProductos.map((p) => [p.id, { estacionId: p.estacionId }])),
+    modificadores: new Map(filasModificadores.map((m) => [m.id, m.precioCentavos])),
+    mesas: new Set(filasMesas.map((m) => m.id)),
+  };
+}
+
 /**
  * Por qué se rechaza un evento, o `null` si pasa. Es la misma regla que el
  * dispositivo aplicó sin red: si llega acá sin cumplirla, se guarda igual
  * —rechazado, nunca descartado— para que quede el rastro.
+ *
+ * Un precio archivado se acepta (el dispositivo pudo no haberse enterado del
+ * cambio), pero tiene que ser un precio real de ese producto y por ese
+ * importe: si no, alguien está cobrando lo que quiere.
  */
-function motivoDeRechazo(evento: EventoNuevo, operadores: Map<string, { rol: Rol; activo: boolean }>): string | null {
-  const operador = operadores.get(evento.operadorId);
+function motivoDeRechazo(evento: EventoNuevo, ref: Referencias): string | null {
+  const operador = ref.usuarios.get(evento.operadorId);
   if (!operador) return 'El operador no existe';
   if (!operador.activo) return 'El operador está desactivado';
   if (!puede(operador, definicion(evento.tipo).accion)) return 'El operador no tiene permiso para esta acción';
-  if (evento.agregadoId !== evento.dispositivoId && definicion(evento.tipo).agregado === 'dispositivo') {
+  if (definicion(evento.tipo).agregado === 'dispositivo' && evento.agregadoId !== evento.dispositivoId) {
     return 'El evento no corresponde a este dispositivo';
   }
-  return null;
+
+  switch (evento.tipo) {
+    case 'cuenta_abierta':
+    case 'mozo_cambiado': {
+      const mozo = ref.usuarios.get(evento.datos.mozoId);
+      if (!mozo?.activo) return 'El mozo no existe o está desactivado';
+      if (evento.tipo === 'cuenta_abierta' && evento.datos.mesaId && !ref.mesas.has(evento.datos.mesaId)) return 'La mesa no existe';
+      return null;
+    }
+    case 'cuenta_movida':
+      return ref.mesas.has(evento.datos.mesaDestinoId) ? null : 'La mesa no existe';
+    case 'item_agregado': {
+      const precio = ref.precios.get(evento.datos.precioId);
+      if (!precio || precio.productoId !== evento.datos.productoId) return 'El precio no corresponde al producto';
+      if (precio.precioCentavos !== evento.datos.precioCentavos) return 'El importe no coincide con el precio de la carta';
+      if (!ref.productos.has(evento.datos.productoId)) return 'El producto no existe';
+      for (const m of evento.datos.modificadores) {
+        if (ref.modificadores.get(m.modificadorId) !== m.precioCentavos) return `El importe de «${m.nombre}» no coincide con la carta`;
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
 }
 
 /**
@@ -42,16 +119,11 @@ function motivoDeRechazo(evento: EventoNuevo, operadores: Map<string, { rol: Rol
 export async function recibirEventos(actor: UsuarioSesion, dispositivoId: string, lote: EventoNuevo[], horaDispositivo: string | null) {
   await dispositivoVigente(dispositivoId);
   if (lote.some((e) => e.dispositivoId !== dispositivoId)) throw new ErrorDominio('El lote mezcla eventos de otro dispositivo');
-
-  const idsOperadores = [...new Set(lote.map((e) => e.operadorId))];
-  const filasOperadores = idsOperadores.length
-    ? await db.select({ id: usuarios.id, rol: usuarios.rol, activo: usuarios.activo }).from(usuarios).where(inArray(usuarios.id, idsOperadores))
-    : [];
-  const operadores = new Map(filasOperadores.filter((o) => esRol(o.rol)).map((o) => [o.id, { rol: o.rol as Rol, activo: o.activo }]));
+  const referencias = await referenciasDe(lote);
 
   const recepciones: Recepcion[] = [];
   for (const evento of lote) {
-    const motivo = motivoDeRechazo(evento, operadores);
+    const motivo = motivoDeRechazo(evento, referencias);
     const [insertado] = await db
       .insert(eventos)
       .values({
@@ -133,31 +205,10 @@ export async function eventosDesde(dispositivoId: string, desde: number): Promis
   };
 }
 
-export interface OperadorCatalogo {
-  id: string;
-  nombre: string;
-  rol: Rol;
-  pinHash: string | null;
-}
-
-/**
- * Lo que un dispositivo necesita para trabajar sin red. Hoy, quiénes pueden
- * operar y su PIN; en las fases siguientes, carta, plano, motivos y reglas.
- */
-export async function catalogo(dispositivoId: string): Promise<{ operadores: OperadorCatalogo[] }> {
+/** Lo que un dispositivo necesita para trabajar sin red. Sólo para dispositivos registrados: lleva los PIN. */
+export async function catalogoDeDispositivo(dispositivoId: string): Promise<Catalogo> {
   await dispositivoVigente(dispositivoId);
-  const filas = await db
-    .select({ id: usuarios.id, nombre: usuarios.nombre, rol: usuarios.rol, esSoporte: usuarios.esSoporte, pinHash: pinesOperador.hash })
-    .from(usuarios)
-    .leftJoin(pinesOperador, eq(pinesOperador.usuarioId, usuarios.id))
-    .where(eq(usuarios.activo, true))
-    .orderBy(asc(usuarios.nombre));
-  // Soporte no opera el salón: no aparece en el selector de operador.
-  return {
-    operadores: filas
-      .filter((f) => !f.esSoporte && esRol(f.rol))
-      .map((f) => ({ id: f.id, nombre: f.nombre, rol: f.rol as Rol, pinHash: f.pinHash })),
-  };
+  return leerCatalogo();
 }
 
 export async function registrarDispositivo(actor: UsuarioSesion, id: string, nombre: string, ip: string | null) {
