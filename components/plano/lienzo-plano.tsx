@@ -17,7 +17,7 @@ import { GRILLA } from './constantes';
 const ESCALA_MIN = 0.3;
 const ESCALA_MAX = 3;
 
-export type TonoMesa = 'libre' | 'ocupada' | 'pidio_cuenta' | 'precuenta' | 'conflicto';
+export type TonoMesa = 'libre' | 'ocupada' | 'demorada' | 'pidio_cuenta' | 'precuenta' | 'conflicto';
 
 export interface MarcaMesa {
   tono: TonoMesa;
@@ -28,6 +28,7 @@ export interface MarcaMesa {
 const TONO: Record<TonoMesa, { relleno: TokenColor; borde: TokenColor }> = {
   libre: { relleno: 'superficie', borde: 'borde-fuerte' },
   ocupada: { relleno: 'acento-tenue', borde: 'acento' },
+  demorada: { relleno: 'error-tenue', borde: 'error' },
   pidio_cuenta: { relleno: 'alerta-tenue', borde: 'alerta' },
   precuenta: { relleno: 'exito-tenue', borde: 'exito' },
   conflicto: { relleno: 'error-tenue', borde: 'error' },

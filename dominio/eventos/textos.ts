@@ -13,4 +13,7 @@ export const NOMBRE_EVENTO: Record<TipoEvento, string> = {
   mozo_cambiado: 'Cambio de mozo',
   cuenta_pedida: 'Pidió la cuenta',
   precuenta_emitida: 'Precuenta',
+  comanda_iniciada: 'Comanda en preparación',
+  comanda_lista: 'Comanda lista',
+  comanda_reabierta: 'Comanda reabierta',
 };

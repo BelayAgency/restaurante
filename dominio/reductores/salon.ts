@@ -86,7 +86,8 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
     anomalias.push({ eventoId: evento.id, tipo: evento.tipo, momento: evento.creadoEnDispositivo, operadorId: evento.operadorId, detalle });
 
   for (const evento of eventos) {
-    if (evento.tipo === 'operador_cambiado' || evento.tipo === 'pin_fallido') continue;
+    // Lo de dispositivo y de cocina lo reducen sus propios reductores.
+    if (evento.tipo === 'operador_cambiado' || evento.tipo === 'pin_fallido' || evento.tipo.startsWith('comanda_')) continue;
 
     if (evento.tipo === 'cuenta_abierta') {
       if (cuentas.has(evento.agregadoId)) continue;

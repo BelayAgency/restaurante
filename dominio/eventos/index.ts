@@ -105,6 +105,24 @@ const DEFINICIONES = {
     accion: 'salon.operar',
     datos: z.object({ precuentaId: id, totalCentavos: centavos }),
   },
+
+  // Cocina: el estado de lo que salió en un envío, para una estación. El
+  // agregado es la cuenta a la que se envió.
+  comanda_iniciada: {
+    agregado: 'cuenta',
+    accion: 'cocina.operar',
+    datos: z.object({ envioId: id, estacionId: id }),
+  },
+  comanda_lista: {
+    agregado: 'cuenta',
+    accion: 'cocina.operar',
+    datos: z.object({ envioId: id, estacionId: id }),
+  },
+  comanda_reabierta: {
+    agregado: 'cuenta',
+    accion: 'cocina.operar',
+    datos: z.object({ envioId: id, estacionId: id }),
+  },
 } as const satisfies Record<string, { agregado: 'dispositivo' | 'cuenta'; accion: Accion; datos: z.ZodType }>;
 
 export type TipoEvento = keyof typeof DEFINICIONES;
@@ -139,6 +157,9 @@ export const esquemaEvento = z.discriminatedUnion('tipo', [
   variante('mozo_cambiado'),
   variante('cuenta_pedida'),
   variante('precuenta_emitida'),
+  variante('comanda_iniciada'),
+  variante('comanda_lista'),
+  variante('comanda_reabierta'),
 ]);
 
 export type EventoNuevo = z.infer<typeof esquemaEvento>;

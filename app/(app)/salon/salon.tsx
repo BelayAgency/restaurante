@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CloudOff, LayoutGrid, ShoppingBag, Store, Tablet } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { CargandoTarjeta } from '@/components/carga';
@@ -11,6 +12,7 @@ import { LienzoPlanoDinamico } from '@/components/plano/lienzo-plano-dinamico';
 import { Tabs } from '@/components/tabs';
 import { Aviso, EstadoVacio, Insignia, Tarjeta, TituloSeccion } from '@/components/ui';
 import { puede } from '@/dominio/permisos';
+import { comandaDemorada, itemsListos, reducirCocina } from '@/dominio/reductores/cocina';
 import { cuentasAbiertas, totalCuenta, vistaDeMesas, type Cuenta } from '@/dominio/reductores/salon';
 import { duracionCorta, minutosDesde, useAhora } from '@/lib/ahora';
 import { pesosDesdeCentavos } from '@/lib/formato';
@@ -28,16 +30,24 @@ import { PanelCuenta } from './panel-cuenta';
  * pide la página al servidor, y sin red eso no vuelve.
  */
 export function Salon() {
-  const { usuario } = useSesion();
+  const { usuario, vista } = useSesion();
+  const router = useRouter();
   const sync = useEstadoSync();
   const ahora = useAhora();
   const datos = useDatosLocales();
   const estado = useEstadoSalon(datos);
   const operadorId = useOperadorDe(datos, usuario.id);
+  const comandas = useMemo(() => (datos ? reducirCocina(datos.eventos) : null), [datos]);
   const [sectorElegido, setSectorElegido] = useState<string | null>(null);
   const [cuentaAbierta, setCuentaAbierta] = useState<string | null>(null);
   const [abriendo, setAbriendo] = useState<{ tipo: TipoCuenta; mesaId: string | null } | null>(null);
   const [eligiendoEntre, setEligiendoEntre] = useState<Cuenta[] | null>(null);
+
+  // Cocina no opera el salón: su inicio es la pantalla de comandas.
+  const soloCocina = !puede({ rol: vista }, 'salon.operar') && puede({ rol: vista }, 'cocina.operar');
+  useEffect(() => {
+    if (soloCocina) router.replace('/cocina');
+  }, [soloCocina, router]);
 
   if (!datos || !estado) return <CargandoTarjeta />;
 
@@ -66,13 +76,18 @@ export function Salon() {
   const sinMesa = cuentasAbiertas(estado).filter((c) => !c.mesaId);
   const cuenta = cuentaAbierta ? estado.cuentas.get(cuentaAbierta) : undefined;
 
+  const cuentasDemoradas = new Set([...(comandas?.values() ?? [])].filter((c) => comandaDemorada(c, ahora)).map((c) => c.cuentaId));
+  const listos = comandas ? itemsListos(comandas) : new Set<string>();
+
   function marcaDeMesa(mesaId: string): MarcaMesa | undefined {
     const vista = mesas.get(mesaId);
     if (!vista) return undefined;
     const primera = vista.cuentas[0]!;
     const total = vista.cuentas.reduce((s, c) => s + totalCuenta(c), 0);
+    // Un pedido demorado pesa más que el resto del estado: es lo que hay que mirar ya.
+    const demorada = vista.cuentas.some((c) => cuentasDemoradas.has(c.id));
     return {
-      tono: vista.cuentas.length > 1 ? 'conflicto' : vista.estado,
+      tono: vista.cuentas.length > 1 ? 'conflicto' : demorada ? 'demorada' : vista.estado,
       lineas: [duracionCorta(minutosDesde(primera.abiertaEn, ahora)), pesosDesdeCentavos(total).replace(',00', '')],
     };
   }
@@ -208,7 +223,7 @@ export function Salon() {
       ) : null}
 
       {cuenta && cuenta.estado === 'abierta' ? (
-        <PanelCuenta key={cuenta.id} cuenta={cuenta} estado={estado} catalogo={catalogo} operador={operador} alCerrar={() => setCuentaAbierta(null)} />
+        <PanelCuenta key={cuenta.id} cuenta={cuenta} estado={estado} listos={listos} catalogo={catalogo} operador={operador} alCerrar={() => setCuentaAbierta(null)} />
       ) : null}
 
       {puede(operador, 'salon.operar') ? null : (

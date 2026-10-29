@@ -40,7 +40,7 @@ export interface CatalogoGuardado {
 
 /** Valores sueltos del dispositivo: su id, el cursor, el operador activo. */
 export interface Ajuste {
-  clave: 'dispositivo' | 'cursor' | 'operador' | 'contacto';
+  clave: 'dispositivo' | 'cursor' | 'operador' | 'contacto' | 'estacion';
   valor: string;
 }
 

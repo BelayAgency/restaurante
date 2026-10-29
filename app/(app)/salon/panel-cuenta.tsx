@@ -19,8 +19,9 @@ import { imprimirPrecuenta } from './imprimir-precuenta';
 
 type Operacion = 'mover' | 'unir' | 'pasar' | 'mozo' | null;
 
-function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar }: {
+function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar, listo }: {
   item: Item;
+  listo?: boolean;
   alQuitar?: () => void;
   seleccionable?: boolean;
   seleccionado?: boolean;
@@ -34,6 +35,11 @@ function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar }
       <div className="min-w-0 flex-1">
         <p className="text-sm text-tinta">
           <span className="tabular-nums">{item.cantidad} ×</span> {item.nombre}
+          {listo ? (
+            <Insignia tono="exito" className="ml-2">
+              Listo
+            </Insignia>
+          ) : null}
           {item.trasPrecuenta ? (
             <Insignia tono="alerta" className="ml-2">
               Después de la precuenta
@@ -56,12 +62,15 @@ function FilaItem({ item, alQuitar, seleccionable, seleccionado, alSeleccionar }
 export function PanelCuenta({
   cuenta,
   estado,
+  listos,
   catalogo,
   operador,
   alCerrar,
 }: {
   cuenta: Cuenta;
   estado: EstadoSalon;
+  /** Ítems que cocina ya marcó listos. */
+  listos: Set<string>;
   catalogo: Catalogo;
   operador: Operador;
   alCerrar: () => void;
@@ -167,7 +176,7 @@ export function PanelCuenta({
                   <p className="mb-1 text-xs font-medium uppercase tracking-wide text-tinta-tenue">En cocina</p>
                   <ul>
                     {enviados.map((i) => (
-                      <FilaItem key={i.id} item={i} />
+                      <FilaItem key={i.id} item={i} listo={listos.has(i.id)} />
                     ))}
                   </ul>
                 </section>
