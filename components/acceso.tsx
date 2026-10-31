@@ -26,7 +26,6 @@ export function Acceso({
   /** El logo del cliente. Un <img> o el nombre escrito si no hay logo. */
   logo,
   nombreSistema,
-  nombreCliente,
   /**
    * `true` cuando el color de marca es claro (amarillo, lima): el panel pasa a
    * texto oscuro. Sin esto el blanco sobre esos colores no se lee.
@@ -36,7 +35,6 @@ export function Acceso({
 }: {
   logo: ReactNode;
   nombreSistema: string;
-  nombreCliente: string;
   marcaClara?: boolean;
   children: ReactNode;
 }) {
@@ -63,7 +61,6 @@ export function Acceso({
               >
                 <LogoBelay className="h-4 w-auto" />
               </a>
-              para {nombreCliente}
             </p>
           </div>
         </div>
