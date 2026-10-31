@@ -1,0 +1,438 @@
+# =============================================================================
+# Belay — deploy estándar de un sistema de cliente
+# =============================================================================
+# Este archivo lo escribe el panel en `.github/workflows/deploy.yml` de cada
+# repo. Es IDÉNTICO para todos los sistemas: lo que cambia por cliente son las
+# variables del repositorio, que también carga el panel.
+#
+#   secret  SSH_PRIVATE_KEY   clave del sistema (Actions -> servidor)
+#   var     SSH_HOST          IP del servidor donde vive esta app
+#   var     SSH_USER          usuario de Linux dueño de la app (app-<slug>)
+#   var     SSH_HOST_KEY      clave pública del host, opcional (ver más abajo)
+#   var     APP_SLUG          identificador del cliente
+#   var     APP_DOMINIO       FQDN público, ej. acme.belay.agency
+#   var     APP_PUERTO        puerto reservado en el servidor
+#   var     APP_PUERTO_INTERNO puerto donde escucha el container, opcional (3000)
+#   var     APP_RAMA          rama que despliega; sin ella se asume `main`
+#
+# Sistemas con más de un container: si el repo tiene
+# `belay/docker-compose.extra.yml`, se levanta junto con el compose estándar.
+# Ahí van el worker, la base de datos o lo que haga falta. Si alguno de esos
+# servicios se construye desde este repo (tiene `build:`), el workflow también
+# lo construye y lo manda; las imágenes públicas las baja el servidor solo.
+#
+# Cómo llega el código al servidor: la imagen se construye ACÁ y viaja por el
+# mismo SSH que ya existe. No hay registry, y por lo tanto no hay credenciales
+# de registry en el servidor: si esa máquina se compromete, no se lleva puesto
+# el acceso a los repos ni a las imágenes de los otros clientes.
+#
+# Para cambiar el estándar se edita `infra/deploy.yml` en el panel y se
+# reenvía a los sistemas. No lo edites acá, en el repo del cliente: la próxima
+# actualización te lo pisa.
+# =============================================================================
+
+name: Deploy
+
+on:
+  push:
+    # Escucha TODAS las ramas y filtra abajo, en el `if` del job, contra la
+    # variable `APP_RAMA` del repositorio.
+    #
+    # No se puede poner la rama acá: `on.push.branches` no acepta expresiones,
+    # así que un `${{ vars.APP_RAMA }}` se tomaría como el nombre literal de una
+    # rama. Y hardcodear `main` obligaría a editar el workflow de un cliente
+    # puntual para que despliegue desde otra rama, que es justo lo que el
+    # estándar existe para evitar.
+    #
+    # El costo de escuchar todo es una corrida que arranca y se saltea en cada
+    # push a cualquier rama. Un job salteado no consume minutos.
+    branches: ['**']
+    # Un cambio de documentación no puede redesplegar un sistema en producción:
+    # es un build, la imagen entera viajando por SSH y los containers
+    # recreándose, todo para que el resultado sea idéntico. En un servidor
+    # compartido y chico eso además compite por disco con los otros clientes.
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+  workflow_dispatch:
+
+# Dos deploys al mismo tiempo sobre el mismo servidor se pisan. Se encolan, no
+# se cancelan: cancelar a mitad de camino puede dejar el container a medio subir.
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  BELAY_DEPLOY_VERSION: '11'
+  IMAGEN: ${{ vars.APP_SLUG }}
+
+jobs:
+  desplegar:
+    name: Construir y desplegar
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Sólo la rama que el panel configuró para este sistema. `workflow_dispatch`
+    # pasa igual: disparar a mano es una decisión de quien lo dispara.
+    #
+    # Si `APP_RAMA` no está cargada, se cae a `main`. Un sistema con el estándar
+    # nuevo pero las variables viejas sigue desplegando como antes en vez de
+    # dejar de desplegar en silencio, que es la peor forma de enterarse.
+    #
+    # Y sin `SSH_HOST` no corre: es un repo armado en pleno desarrollo, antes
+    # de tener servidor, y cada push terminaría en una corrida roja por algo que
+    # no es un error. La variable la carga el panel al asignarle el servidor.
+    # Disparar a mano sí corre, y falla con el mensaje de qué falta.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.SSH_HOST != '' && github.ref_name == (vars.APP_RAMA || 'main'))
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Revisar la configuración
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          APP_SLUG: ${{ vars.APP_SLUG }}
+          APP_DOMINIO: ${{ vars.APP_DOMINIO }}
+          APP_PUERTO: ${{ vars.APP_PUERTO }}
+          CLAVE: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          # Fallar acá, con un mensaje claro, es mucho mejor que fallar en el
+          # scp con un "Could not resolve hostname".
+          falta=0
+          for v in SSH_HOST SSH_USER APP_SLUG APP_DOMINIO APP_PUERTO; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Falta la variable $v en este repositorio"
+              falta=1
+            fi
+          done
+          if [ -z "$CLAVE" ]; then
+            echo "::error::Falta el secret SSH_PRIVATE_KEY"
+            falta=1
+          fi
+          if [ ! -f Dockerfile ]; then
+            echo "::error::Este repo no tiene Dockerfile en la raíz"
+            falta=1
+          fi
+          if [ "$falta" != 0 ]; then
+            echo "Las carga el panel de Belay: Clientes > el cliente > Repositorio."
+            exit 1
+          fi
+
+      - name: Ver si el sistema tiene servicios extra
+        id: extra
+        env:
+          APP_SLUG: ${{ vars.APP_SLUG }}
+          APP_DOMINIO: ${{ vars.APP_DOMINIO }}
+          APP_PUERTO: ${{ vars.APP_PUERTO }}
+          APP_PUERTO_INTERNO: ${{ vars.APP_PUERTO_INTERNO }}
+          APP_IMAGEN: ${{ vars.APP_SLUG }}:${{ github.sha }}
+        run: |
+          if [ ! -f belay/docker-compose.extra.yml ]; then
+            echo 'hay=no' >> "$GITHUB_OUTPUT"
+            echo 'archivos=-f belay/docker-compose.yml' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo 'hay=si' >> "$GITHUB_OUTPUT"
+          echo 'archivos=-f belay/docker-compose.yml -f belay/docker-compose.extra.yml' >> "$GITHUB_OUTPUT"
+          echo 'Este sistema levanta servicios extra.'
+
+          # Un servicio que se construye acá TIENE que decir con qué nombre.
+          #
+          # Sin `image:`, compose deriva el nombre del proyecto, y el proyecto no
+          # es el mismo de los dos lados: en el runner sale del directorio del
+          # compose (`belay`) y en el servidor del `-p` del deploy (el slug). Se
+          # construiría una imagen y se buscaría otra, así que el servidor
+          # terminaría queriendo compilar un contexto que allá no existe.
+          #
+          # Antes esto no se miraba y el deploy moría más adelante empaquetando
+          # un `null`, que no dice nada de lo que pasa. Se falla acá, antes de
+          # construir la imagen de la app: son dos minutos que no se pierden.
+          config=$(docker compose -f belay/docker-compose.yml -f belay/docker-compose.extra.yml config --format json)
+          sin_nombre=$(echo "$config" | jq -r '.services | to_entries[] | select(.value.build != null and .value.image == null) | .key')
+
+          if [ -n "$sin_nombre" ]; then
+            for s in $sin_nombre; do
+              echo "::error::El servicio \"$s\" de belay/docker-compose.extra.yml se construye desde este repo pero no declara \`image:\`."
+            done
+            echo 'Agregale un nombre fijo, por ejemplo `image: <slug>-<servicio>:actual`.'
+            echo 'Sin eso la imagen se construye con un nombre en Actions y se busca con otro en el servidor.'
+            exit 1
+          fi
+
+      - name: Construir la imagen
+        run: |
+          # Sin buildx y sin caché de capas entre corridas, a propósito. Se
+          # probó `docker buildx build --cache-from/--cache-to type=gha` con la
+          # idea de que las capas que no cambian conservaran su digest y el
+          # servidor las guardara una sola vez entre versiones. Medido en
+          # pesquera: la segunda corrida con caché disponible tardó exactamente
+          # lo mismo que la primera (108 s contra 108 s, y 66 s sin buildx), y
+          # las dos imágenes del MISMO commit siguieron sin compartir una sola
+          # capa. No sirvió y costaba 40 segundos por deploy.
+          docker build \
+            --tag "$IMAGEN:${{ github.sha }}" \
+            --tag "$IMAGEN:actual" \
+            --label "belay.slug=${{ vars.APP_SLUG }}" \
+            --label "belay.commit=${{ github.sha }}" \
+            .
+
+      - name: Construir las imágenes extra
+        id: extras
+        if: steps.extra.outputs.hay == 'si'
+        env:
+          APP_SLUG: ${{ vars.APP_SLUG }}
+          APP_DOMINIO: ${{ vars.APP_DOMINIO }}
+          APP_PUERTO: ${{ vars.APP_PUERTO }}
+          APP_PUERTO_INTERNO: ${{ vars.APP_PUERTO_INTERNO }}
+          APP_IMAGEN: ${{ vars.APP_SLUG }}:${{ github.sha }}
+        run: |
+          # Sólo los servicios que se construyen desde este repo. Una imagen
+          # pública (postgres, redis) la baja el servidor: mandarla por SSH
+          # sería pagar el ancho de banda dos veces y por nada.
+          config=$(docker compose ${{ steps.extra.outputs.archivos }} config --format json)
+          servicios=$(echo "$config" | jq -r '.services | to_entries[] | select(.value.build != null) | .key')
+          imagenes=$(echo "$config" | jq -r '.services | to_entries[] | select(.value.build != null) | .value.image' | sort -u)
+
+          if [ -z "$servicios" ]; then
+            echo 'Ningún servicio extra se construye acá.'
+            echo 'imagenes=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Construyendo: $(echo "$servicios" | tr '\n' ' ')"
+          docker compose ${{ steps.extra.outputs.archivos }} build $servicios
+          echo "imagenes=$(echo "$imagenes" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Empaquetar la imagen
+        run: |
+          # -1 porque el cuello de botella es la red del runner, no la CPU.
+          docker save "$IMAGEN:${{ github.sha }}" "$IMAGEN:actual" ${{ steps.extras.outputs.imagenes }} \
+            | gzip -1 > imagen.tar.gz
+          ls -lh imagen.tar.gz
+
+      - name: Preparar el acceso SSH
+        env:
+          CLAVE: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_HOST_KEY: ${{ vars.SSH_HOST_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$CLAVE" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "$SSH_HOST_KEY" ]; then
+            printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          else
+            # Sin la clave del host esto confía en la primera conexión. Sirve,
+            # pero deja la puerta abierta a que alguien se ponga en el medio.
+            echo "::warning::Sin SSH_HOST_KEY: se confía en lo que responda $SSH_HOST."
+            ssh-keyscan -T 10 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Hacer lugar en el servidor
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          APP_SLUG: ${{ vars.APP_SLUG }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Se limpia ANTES de mandar nada, y no después de que la app quede
+          # sana. El orden importa y está aprendido a los golpes: si se limpia
+          # al final, un deploy que falla deja la imagen cargada ocupando lugar,
+          # el siguiente arranca con menos espacio, vuelve a fallar, y cada
+          # intento empeora el anterior hasta que el disco se llena y no levanta
+          # nada. Ya pasó una vez con un solo sistema; ahora este workflow corre
+          # para todos, así que el mismo bucle se multiplicaría.
+          COMPRIMIDO_MB=$(( $(stat -c %s imagen.tar.gz) / 1024 / 1024 ))
+          echo "La imagen comprimida pesa ${COMPRIMIDO_MB} MB."
+
+          ssh "$SSH_USER@$SSH_HOST" \
+            "APP_SLUG='$APP_SLUG' SHA='$SHA' COMPRIMIDO_MB='$COMPRIMIDO_MB' bash -s" <<'REMOTO'
+          set -euo pipefail
+
+          echo "Antes de limpiar: $(df -h --output=avail / | tail -1 | tr -d ' ') libres"
+
+          # Sólo lo de ESTE sistema. Nada de `docker system prune`: en un
+          # servidor compartido eso se lleva puesto lo de los otros clientes.
+          docker images --filter "reference=${APP_SLUG}" --format '{{.Repository}}:{{.Tag}}' \
+            | grep -v -e ":actual$" -e ":anterior$" -e ":${SHA}$" \
+            | xargs -r docker rmi >/dev/null 2>&1 || true
+
+          # Y las que quedaron sin nombre. Cada `docker load` que reemplaza un
+          # tag deja la imagen vieja colgando sin repositorio, y el filtro de
+          # arriba no las ve: `reference=` no matchea lo que no tiene nombre.
+          # Acá antes decía que un prune era demasiado global para una máquina
+          # compartida y por eso no se hacía. Esa cautela salió mal: juntó 14 GB
+          # de imágenes huérfanas y llenó el disco. `prune` sin `-a` borra SÓLO
+          # las colgantes, que por definición son versiones que ningún tag
+          # apunta y ningún container usa, así que no puede tocar el `:actual`
+          # ni el `:anterior` de otro cliente. Lo prohibido es `-a`: ése borra
+          # toda imagen sin container arriba y se lleva puesto el rollback ajeno.
+          docker image prune -f >/dev/null 2>&1 || true
+
+          # Un tarball a medio subir de un intento anterior.
+          rm -f ~/app/imagen.tar.gz
+
+          LIBRE_MB=$(df -Pm / | tail -1 | awk '{print $4}')
+          echo "Después de limpiar: ${LIBRE_MB} MB libres"
+
+          # `docker load` descomprime, así que hace falta bastante más que el
+          # tamaño del tarball. Tres veces el comprimido más un giga de margen
+          # para migraciones y archivos temporales.
+          NECESARIO_MB=$(( COMPRIMIDO_MB * 3 + 1024 ))
+          if [ "$LIBRE_MB" -lt "$NECESARIO_MB" ]; then
+            echo "::error::Sin espacio: quedan ${LIBRE_MB} MB y hacen falta ${NECESARIO_MB} MB."
+            echo "No se despliega. Es preferible dejar andando la versión actual"
+            echo "que llenar el disco a mitad de camino y tumbar a todos los sistemas."
+            docker system df || true
+            exit 1
+          fi
+          REMOTO
+
+      - name: Copiar al servidor
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" 'install -d -m 750 ~/app'
+          scp -q imagen.tar.gz belay/docker-compose.yml "$SSH_USER@$SSH_HOST:app/"
+          if [ -f belay/docker-compose.extra.yml ]; then
+            scp -q belay/docker-compose.extra.yml "$SSH_USER@$SSH_HOST:app/"
+          else
+            # Si el sistema dejó de tener servicios extra, que no quede vivo el
+            # archivo de la corrida anterior levantando containers fantasma.
+            ssh "$SSH_USER@$SSH_HOST" 'rm -f ~/app/docker-compose.extra.yml'
+          fi
+
+      - name: Levantar la versión nueva
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          APP_SLUG: ${{ vars.APP_SLUG }}
+          APP_DOMINIO: ${{ vars.APP_DOMINIO }}
+          APP_PUERTO: ${{ vars.APP_PUERTO }}
+          APP_PUERTO_INTERNO: ${{ vars.APP_PUERTO_INTERNO }}
+          SHA: ${{ github.sha }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" \
+            "APP_SLUG='$APP_SLUG' APP_DOMINIO='$APP_DOMINIO' APP_PUERTO='$APP_PUERTO' \
+             APP_PUERTO_INTERNO='${APP_PUERTO_INTERNO:-3000}' SHA='$SHA' bash -s" <<'REMOTO'
+          set -euo pipefail
+          cd ~/app
+
+          # Los secretos de la app los maneja quien opera el servidor, no el
+          # deploy: si no existe, se crea vacío para que compose no falle.
+          touch .env.app
+
+          # Un sistema puede tener worker, base de datos o lo que necesite.
+          ARCHIVOS="-f docker-compose.yml"
+          if [ -f docker-compose.extra.yml ]; then
+            ARCHIVOS="$ARCHIVOS -f docker-compose.extra.yml"
+          fi
+
+          # Si hay algo andando, se guarda para poder volver.
+          if docker image inspect "${APP_SLUG}:actual" >/dev/null 2>&1; then
+            docker tag "${APP_SLUG}:actual" "${APP_SLUG}:anterior"
+          fi
+
+          gunzip -c imagen.tar.gz | docker load
+          rm -f imagen.tar.gz
+
+          cat > .env <<VARS
+          APP_SLUG=${APP_SLUG}
+          APP_DOMINIO=${APP_DOMINIO}
+          APP_PUERTO=${APP_PUERTO}
+          APP_PUERTO_INTERNO=${APP_PUERTO_INTERNO}
+          APP_IMAGEN=${APP_SLUG}:${SHA}
+          VARS
+
+          docker compose -p "$APP_SLUG" $ARCHIVOS up -d --remove-orphans
+
+          # Un container que arranca y se cae a los 3 segundos igual reporta
+          # "up" al instante: hay que mirarlo un rato.
+          sano=0
+          for _ in $(seq 1 20); do
+            sleep 3
+            estado=$(docker inspect -f '{{.State.Status}}' "${APP_SLUG}-app-1" 2>/dev/null || echo ausente)
+            reinicios=$(docker inspect -f '{{.RestartCount}}' "${APP_SLUG}-app-1" 2>/dev/null || echo 0)
+            if [ "$estado" = "running" ] && [ "$reinicios" -lt 2 ]; then
+              sano=$((sano + 1))
+              if [ "$sano" -ge 3 ]; then break; fi
+            else
+              sano=0
+            fi
+          done
+
+          if [ "$sano" -lt 3 ]; then
+            # El disco va junto con los logs a propósito: un 502 con el disco
+            # lleno se lee igual que cualquier otra falla si no se mira.
+            echo "Disco: $(df -h --output=avail / | tail -1 | tr -d ' ') libres"
+            echo "El container no se sostiene. Últimas líneas:"
+            docker compose -p "$APP_SLUG" $ARCHIVOS logs --tail 60 || true
+            if docker image inspect "${APP_SLUG}:anterior" >/dev/null 2>&1; then
+              echo "Volviendo a la versión anterior."
+              sed -i "s|^APP_IMAGEN=.*|APP_IMAGEN=${APP_SLUG}:anterior|" .env
+              docker compose -p "$APP_SLUG" $ARCHIVOS up -d
+            fi
+            exit 1
+          fi
+
+          docker tag "${APP_SLUG}:${SHA}" "${APP_SLUG}:actual"
+          docker compose -p "$APP_SLUG" $ARCHIVOS ps
+
+          # Limpieza acotada a ESTE sistema. Nada de `docker image prune`: en un
+          # servidor compartido eso se lleva puesto lo de los demás clientes.
+          docker images --filter "reference=${APP_SLUG}" --format '{{.Repository}}:{{.Tag}}' \
+            | grep -v -e ":actual$" -e ":anterior$" -e ":${SHA}$" \
+            | xargs -r docker rmi >/dev/null 2>&1 || true
+          REMOTO
+
+      - name: Comprobar que responde
+        env:
+          APP_DOMINIO: ${{ vars.APP_DOMINIO }}
+        run: |
+          # Desde afuera, como lo ve un usuario: pasa por Cloudflare y Traefik.
+          #
+          # Se acepta cualquier 2xx o 3xx, y también 401 y 403: una aplicación
+          # detrás de login contesta eso en la raíz y está perfectamente sana.
+          #
+          # Un 404 NO se acepta. En este esquema significa que ningún router del
+          # proxy reclama ese dominio, o sea que la aplicación está corriendo y
+          # nadie puede llegar. Es el caso exacto que este paso existe para
+          # agarrar, y durante mucho tiempo lo dejó pasar porque alcanzaba con
+          # ser menor a 500.
+          #
+          # Y si nunca responde, el paso FALLA en vez de dejar un aviso: un
+          # warning se ve en verde desde afuera, que es lo mismo que no avisar.
+          ultimo=000
+          for i in 1 2 3 4 5 6; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$APP_DOMINIO/" || echo 000)
+            ultimo=$codigo
+            echo "intento $i: HTTP $codigo"
+            case "$codigo" in
+              2??|3??|401|403)
+                echo "$APP_DOMINIO responde (HTTP $codigo)"
+                exit 0
+                ;;
+            esac
+            # 000, 404 y 5xx pueden ser el proxy recargando o el DNS recién
+            # publicado: se reintenta antes de darlo por roto.
+            sleep 10
+          done
+
+          echo "::error::$APP_DOMINIO terminó en HTTP $ultimo. La versión nueva quedó instalada en el servidor, pero desde afuera no se la alcanza."
+          if [ "$ultimo" = "404" ]; then
+            echo "Un 404 acá suele ser que falta el archivo de ruteo del sistema en el proxy (dinamico/<slug>.yml)."
+          fi
+          exit 1
+
+      - name: Borrar la clave del runner
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
