@@ -52,6 +52,11 @@ export async function exigirSesion(accion?: Accion): Promise<UsuarioSesion> {
   return usuario;
 }
 
+/** Demo: además de soporte, el dueño puede alternar entre las vistas de los roles para mostrarlas. */
+export function alternaVistas(usuario: Pick<UsuarioSesion, 'esSoporte' | 'rol'>): boolean {
+  return usuario.esSoporte || usuario.rol === 'dueno';
+}
+
 export function respuestaDeError(error: unknown): Response {
   if (error instanceof ErrorAcceso) return Response.json({ error: error.message }, { status: error.estado });
   console.error('[api]', error);

@@ -7,7 +7,7 @@ import { Marco } from '@/components/marco';
 import { esRol } from '@/dominio/roles';
 import { NOMBRE_SISTEMA } from '@/lib/marca';
 import { leerServicioBelay } from '@/lib/servicio-belay';
-import { usuarioDePagina } from '@/lib/sesion';
+import { alternaVistas, usuarioDePagina } from '@/lib/sesion';
 import { ProveedorAutorizacion } from './autorizacion';
 import { EsperaSync } from './espera-sync';
 import { MotorSync } from './motor-sync';
@@ -20,7 +20,7 @@ async function MarcoAutenticado({ children }: { children: ReactNode }) {
   const usuario = await usuarioDePagina();
   const servicio = await leerServicioBelay();
   const vistaGuardada = (await cookies()).get('vista-rol')?.value;
-  const vista = usuario.esSoporte && esRol(vistaGuardada) ? vistaGuardada : usuario.rol;
+  const vista = alternaVistas(usuario) && esRol(vistaGuardada) ? vistaGuardada : usuario.rol;
 
   return (
     <>

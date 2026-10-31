@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { email as esquemaEmail, nombrePersona } from '@/dominio/texto-mail';
 import { ROLES } from '@/dominio/roles';
-import { ejecutar, exigirSesion, ipCliente, ErrorAcceso } from '@/lib/sesion';
+import { alternaVistas, ejecutar, exigirSesion, ipCliente, ErrorAcceso } from '@/lib/sesion';
 import { auth } from '@/servidor/auth';
 import { leerFacturacion } from '@/servidor/facturacion';
 import {
@@ -146,7 +146,7 @@ export async function accionFacturacion(offset: unknown) {
 export async function accionCambiarVista(vista: unknown) {
   return ejecutar(async () => {
     const actor = await exigirSesion();
-    if (!actor.esSoporte) throw new ErrorAcceso(403, 'Sólo soporte alterna vistas');
+    if (!alternaVistas(actor)) throw new ErrorAcceso(403, 'Sólo el dueño alterna vistas');
     const elegida = rol.parse(vista);
     const almacen = await cookies();
     if (elegida === actor.rol) almacen.delete('vista-rol');
