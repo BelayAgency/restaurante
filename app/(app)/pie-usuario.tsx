@@ -66,7 +66,7 @@ export function PieUsuario() {
   return (
     <div className="flex flex-col gap-2">
       <SelectorTema />
-      {usuario.esSoporte || usuario.rol === 'dueno' ? <SelectorVista /> : null}
+      {usuario.esSoporte ? <SelectorVista /> : null}
       <MenuUsuario
         nombre={usuario.nombre}
         email={usuario.email}
