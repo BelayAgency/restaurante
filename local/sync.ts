@@ -17,11 +17,17 @@ export interface EstadoSync {
   sincronizando: boolean;
   problema: ProblemaSync;
   ultimoContacto: string | null;
+  /**
+   * Ya hay datos locales para mostrar: había de antes, o terminó la primera
+   * sincronización (con o sin red). Hasta entonces la app espera tapada, en vez
+   * de mostrarse vacía y llenarse a saltos mientras baja todo.
+   */
+  listo: boolean;
 }
 
 const INTERVALO_MS = 15_000;
 
-let estado: EstadoSync = { enLinea: true, sincronizando: false, problema: null, ultimoContacto: null };
+let estado: EstadoSync = { enLinea: true, sincronizando: false, problema: null, ultimoContacto: null, listo: false };
 const suscriptores = new Set<() => void>();
 let arrancado = false;
 let enCurso: Promise<void> | null = null;
@@ -41,7 +47,7 @@ export function estadoSync(): EstadoSync {
   return estado;
 }
 
-const ESTADO_SERVIDOR: EstadoSync = { enLinea: true, sincronizando: false, problema: null, ultimoContacto: null };
+const ESTADO_SERVIDOR: EstadoSync = { enLinea: true, sincronizando: false, problema: null, ultimoContacto: null, listo: false };
 export function estadoSyncServidor(): EstadoSync {
   return ESTADO_SERVIDOR;
 }
@@ -187,7 +193,7 @@ export async function arrancarSync() {
   if (arrancado) return;
   arrancado = true;
   if (!(await leerAjuste('dispositivo'))) await guardarAjuste('dispositivo', crypto.randomUUID());
-  actualizar({ enLinea: navigator.onLine, ultimoContacto: await leerAjuste('contacto') });
+  actualizar({ enLinea: navigator.onLine, ultimoContacto: await leerAjuste('contacto'), listo: (await leerAjuste('cursor')) !== null });
   window.addEventListener('online', () => {
     actualizar({ enLinea: true });
     abrirVivo();
@@ -197,6 +203,7 @@ export async function arrancarSync() {
   setInterval(() => void sincronizar(), INTERVALO_MS);
   abrirVivo();
   await sincronizar();
+  actualizar({ listo: true });
 }
 
 export class EventoNoPermitido extends Error {}
