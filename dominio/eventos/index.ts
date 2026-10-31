@@ -51,8 +51,9 @@ const DEFINICIONES = {
         tipo: z.enum(['mesa', 'mostrador', 'llevar']),
         mesaId: id.nullable(),
         mozoId: z.string().min(1),
-        // Obligatorio en una mesa: después se cruzan cubiertos contra consumo.
-        comensales: z.number().int().min(1).max(99),
+        // 0 es "no se cargó": al abrir ya no se pregunta. Los reportes por
+        // comensal dividen sólo cuando hay alguno.
+        comensales: z.number().int().min(0).max(99),
         nombre: z.string().trim().max(60).nullable(),
       })
       .refine((d) => (d.tipo === 'mesa') === (d.mesaId !== null), 'Una cuenta de mesa necesita su mesa, y sólo ella'),
@@ -72,6 +73,9 @@ const DEFINICIONES = {
       cantidad: z.number().int().min(1).max(99),
       modificadores: z.array(modificadorElegido).max(20),
       nota: z.string().trim().max(140).nullable(),
+      // La orden de la que es parte, para mostrar separadas dos órdenes cargadas
+      // sin enviar. Los ítems de antes no la traen.
+      ordenId: id.optional(),
     }),
   },
   item_quitado: {
@@ -105,6 +109,13 @@ const DEFINICIONES = {
     datos: z.object({ mozoId: z.string().min(1) }),
   },
   cuenta_pedida: {
+    agregado: 'cuenta',
+    accion: 'salon.operar',
+    datos: z.object({}),
+  },
+  // Se marcó por error, o la mesa volvió a pedir algo: la marca se levanta con
+  // otro evento, no borrando la anterior.
+  cuenta_pedida_cancelada: {
     agregado: 'cuenta',
     accion: 'salon.operar',
     datos: z.object({}),
@@ -181,12 +192,15 @@ const DEFINICIONES = {
   item_anulado: {
     agregado: 'cuenta',
     accion: 'salon.operar',
-    datos: z.object({ itemId: id }),
+    // Sin cantidad se anula el ítem entero; con cantidad, sólo esas unidades
+    // (bajarle la cantidad a algo ya enviado también es anular).
+    datos: z.object({ itemId: id, cantidad: z.number().int().min(1).max(999).optional() }),
   },
   item_cortesia: {
     agregado: 'cuenta',
     accion: 'salon.operar',
-    datos: z.object({ itemId: id }),
+    // Como al anular: sin cantidad se regala el ítem entero; con cantidad, sólo esas unidades.
+    datos: z.object({ itemId: id, cantidad: z.number().int().min(1).max(999).optional() }),
   },
   precio_modificado: {
     agregado: 'cuenta',
@@ -246,6 +260,7 @@ export const esquemaEvento = z.discriminatedUnion('tipo', [
   variante('items_transferidos'),
   variante('mozo_cambiado'),
   variante('cuenta_pedida'),
+  variante('cuenta_pedida_cancelada'),
   variante('precuenta_emitida'),
   variante('comanda_iniciada'),
   variante('comanda_lista'),

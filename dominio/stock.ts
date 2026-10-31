@@ -3,9 +3,9 @@
  * venta, cuánto cuesta un plato y cómo cambia el costo con una compra.
  */
 
-export type UnidadBase = 'g' | 'ml' | 'u';
+export type UnidadBase = 'g' | 'ml' | 'u' | 'parte';
 
-export const NOMBRE_UNIDAD: Record<UnidadBase, string> = { g: 'g', ml: 'ml', u: 'u.' };
+export const NOMBRE_UNIDAD: Record<UnidadBase, string> = { g: 'g', ml: 'ml', u: 'u.', parte: 'partes' };
 
 export interface LineaReceta {
   insumoId: string;
@@ -61,4 +61,29 @@ const NUMERO = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
 /** `1250 g`, `1,5 ml`, `12 u.` */
 export function formatearCantidad(cantidad: number, unidad: UnidadBase): string {
   return `${NUMERO.format(cantidad)} ${NOMBRE_UNIDAD[unidad]}`;
+}
+
+/** Con la composición declarada, cuántas unidades físicas son: `13.500 ml · 18 u.` */
+export function formatearConUnidades(cantidad: number, unidad: UnidadBase, contenidoPorUnidad: number | null): string {
+  const base = formatearCantidad(cantidad, unidad);
+  return contenidoPorUnidad ? `${base} · ${NUMERO.format(cantidad / contenidoPorUnidad)} u.` : base;
+}
+
+export interface Medida {
+  unidad: UnidadBase;
+  contenidoPorUnidad: number | null;
+}
+
+/**
+ * Por cuánto se multiplica una cantidad al cambiar de medida. La composición es
+ * el puente: si una botella trae 750 ml, pasar de unidades a ml es ×750, y de
+ * ml a partes (5 copas por botella), ×5/750. Sin composición de los dos lados
+ * no hay cuenta posible (ml a g depende de qué sea): devuelve null.
+ */
+export function factorDeConversion(de: Medida, a: Medida): number | null {
+  if (de.unidad === a.unidad) return 1;
+  const porUnidad = (m: Medida) => (m.unidad === 'u' ? 1 : m.contenidoPorUnidad);
+  const desde = porUnidad(de);
+  const hasta = porUnidad(a);
+  return desde && hasta ? hasta / desde : null;
 }

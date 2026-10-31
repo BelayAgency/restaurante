@@ -1,27 +1,14 @@
 import 'server-only';
-import { and, asc, eq, inArray, isNull, ne, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, notInArray } from 'drizzle-orm';
 import { db } from '@/db/cliente';
 import { elementosPlano, sectores } from '@/db/esquema';
-import type { ElementoPlano, SectorCatalogo } from '@/dominio/catalogo';
+import type { ElementoPlano } from '@/dominio/catalogo';
 import { puede } from '@/dominio/permisos';
 import { ErrorAcceso, ErrorDominio, type UsuarioSesion } from '@/lib/sesion';
 import { auditar } from './auditoria';
-import { sinArchivado } from './filas';
 
 function exigirPlano(actor: UsuarioSesion) {
   if (!puede(actor, 'plano.administrar')) throw new ErrorAcceso(403, 'Sólo el dueño edita el plano');
-}
-
-export async function leerPlano(actor: UsuarioSesion): Promise<{ sectores: SectorCatalogo[]; elementos: ElementoPlano[] }> {
-  exigirPlano(actor);
-  const [filasSectores, filasElementos] = await Promise.all([
-    db.select().from(sectores).where(isNull(sectores.archivadoEn)).orderBy(asc(sectores.orden), asc(sectores.nombre)),
-    db.select().from(elementosPlano).where(isNull(elementosPlano.archivadoEn)),
-  ]);
-  return {
-    sectores: filasSectores.map(sinArchivado),
-    elementos: filasElementos.map(sinArchivado),
-  };
 }
 
 export interface DatosSector {
@@ -77,7 +64,7 @@ export async function guardarSector(actor: UsuarioSesion, datos: DatosSector, ip
       .where(and(eq(elementosPlano.sectorId, datos.id), isNull(elementosPlano.archivadoEn), ids.length ? notInArray(elementosPlano.id, ids) : undefined));
 
     for (const e of datos.elementos) {
-      const fila = { ...e, sectorId: datos.id, numeroMesa: e.tipo === 'mesa' ? e.numeroMesa : null, capacidad: e.tipo === 'mesa' ? e.capacidad : null };
+      const fila = { ...e, sectorId: datos.id, numeroMesa: e.tipo === 'mesa' ? e.numeroMesa : null, capacidad: e.tipo === 'mesa' ? e.capacidad : null, etiqueta: e.tipo === 'mesa' ? null : e.etiqueta };
       await tx.insert(elementosPlano).values(fila).onConflictDoUpdate({ target: elementosPlano.id, set: { ...fila, archivadoEn: null } });
     }
   });

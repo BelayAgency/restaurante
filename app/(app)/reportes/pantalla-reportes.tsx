@@ -1,20 +1,28 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { FileSpreadsheet, FileText } from 'lucide-react';
 import { GraficoActividad } from '@/components/grafico-actividad';
 import { PanelTab, Tabs } from '@/components/tabs';
 import { EstadoVacio, Insignia, Metrica, Tabla, Tarjeta, Td, Th } from '@/components/ui';
 import { formatearCantidad, type UnidadBase } from '@/dominio/stock';
-import { fechaCorta, pesosDesdeCentavos } from '@/lib/formato';
-import type { ReporteVentas } from '@/servidor/reportes';
+import { diaLocal } from '@/dominio/reservas';
+import { fechaCorta, hora, pesosDesdeCentavos } from '@/lib/formato';
+import type { CajaDelPeriodo, ReporteVentas } from '@/servidor/reportes';
 
 interface Props {
   ventas: ReporteVentas;
   compras: { proveedor: string; totalCentavos: number; facturas: number }[];
   stock: { nombre: string; unidad: UnidadBase; cantidad: number; valorCentavos: number }[];
-  /** `?tipo=…&valor=…` del período, para que la exportación sea del mismo rango. */
-  consultaPeriodo: string;
+  cajas: CajaDelPeriodo[];
+}
+
+/** `31/10 20:05 – 01:40`: la fecha del cierre sólo si no es la de la apertura. */
+function horarioCaja(c: CajaDelPeriodo): string {
+  const abre = diaLocal(new Date(c.abiertoEn));
+  const desde = `${fechaCorta(abre).slice(0, 5)} ${hora(c.abiertoEn)}`;
+  if (!c.cerradoEn) return `${desde} · abierta`;
+  const cierra = diaLocal(new Date(c.cerradoEn));
+  return `${desde} – ${cierra === abre ? '' : `${fechaCorta(cierra).slice(0, 5)} `}${hora(c.cerradoEn)}`;
 }
 
 function TablaSimple({ cabeza, filas, vacio }: { cabeza: { texto: string; derecha?: boolean }[]; filas: ReactNode[][]; vacio: string }) {
@@ -47,7 +55,7 @@ function TablaSimple({ cabeza, filas, vacio }: { cabeza: { texto: string; derech
   );
 }
 
-export function PantallaReportes({ ventas, compras, stock, consultaPeriodo }: Props) {
+export function PantallaReportes({ ventas, compras, stock, cajas }: Props) {
   const [tab, setTab] = useState('ventas');
   const p = pesosDesdeCentavos;
   const { resumen } = ventas;
@@ -56,16 +64,7 @@ export function PantallaReportes({ ventas, compras, stock, consultaPeriodo }: Pr
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap justify-end gap-3 text-sm">
-        <a href={`/api/reportes/exportar?formato=xlsx&${consultaPeriodo}`} className="inline-flex items-center gap-1.5 font-medium text-acento hover:underline">
-          <FileSpreadsheet size={15} strokeWidth={1.5} /> Excel
-        </a>
-        <a href={`/api/reportes/exportar?formato=pdf&${consultaPeriodo}`} className="inline-flex items-center gap-1.5 font-medium text-acento hover:underline">
-          <FileText size={15} strokeWidth={1.5} /> PDF
-        </a>
-      </div>
-
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid gap-3 min-[360px]:grid-cols-2 lg:grid-cols-4">
         <Metrica etiqueta="Ventas" valor={p(resumen.ventasCentavos)} detalle={`Propinas aparte: ${p(resumen.propinasCentavos)}`} />
         <Metrica etiqueta="Cuentas" valor={String(resumen.cuentas)} detalle={`${resumen.comensales} comensales`} />
         <Metrica etiqueta="Ticket promedio" valor={p(resumen.ticketPromedioCentavos)} />
@@ -83,6 +82,7 @@ export function PantallaReportes({ ventas, compras, stock, consultaPeriodo }: Pr
               { valor: 'platos', etiqueta: 'Platos' },
               { valor: 'rentabilidad', etiqueta: 'Rentabilidad' },
               { valor: 'mozos', etiqueta: 'Mozos' },
+              { valor: 'cajas', etiqueta: 'Cajas' },
               { valor: 'compras', etiqueta: 'Compras' },
               { valor: 'stock', etiqueta: 'Stock' },
             ]}
@@ -162,6 +162,39 @@ export function PantallaReportes({ ventas, compras, stock, consultaPeriodo }: Pr
               cabeza={[{ texto: 'Mozo' }, { texto: 'Cuentas', derecha: true }, { texto: 'Comensales', derecha: true }, { texto: 'Ventas', derecha: true }, { texto: 'Por comensal', derecha: true }]}
               filas={ventas.porMozo.map((m) => [m.nombre, m.cuentas, m.comensales, p(m.ventasCentavos), p(m.porComensalCentavos)])}
               vacio="No hubo cuentas cerradas en el período"
+            />
+          </div>
+        </PanelTab>
+
+        <PanelTab valor="cajas" activo={tab}>
+          <div className="mt-4">
+            <TablaSimple
+              cabeza={[
+                { texto: 'Caja' },
+                { texto: 'Horario' },
+                { texto: 'Cobros', derecha: true },
+                { texto: 'Ventas', derecha: true },
+                { texto: 'Propinas', derecha: true },
+                { texto: 'Retiros y gastos', derecha: true },
+                { texto: 'Diferencia', derecha: true },
+              ]}
+              filas={cajas.map((c) => [
+                c.abiertoPor,
+                horarioCaja(c),
+                c.cobros,
+                p(c.ventasCentavos),
+                p(c.propinasCentavos),
+                c.salidasCentavos ? `− ${p(c.salidasCentavos)}` : '—',
+                c.diferenciaCentavos === null ? '—' : c.diferenciaCentavos === 0 ? (
+                  <Insignia key="d" tono="exito">Sin diferencia</Insignia>
+                ) : (
+                  <Insignia key="d" tono={c.diferenciaCentavos < 0 ? 'error' : 'alerta'}>
+                    {c.diferenciaCentavos > 0 ? '+ ' : '− '}
+                    {p(Math.abs(c.diferenciaCentavos))}
+                  </Insignia>
+                ),
+              ])}
+              vacio="No se abrió ninguna caja en el período"
             />
           </div>
         </PanelTab>

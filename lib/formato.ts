@@ -41,6 +41,18 @@ export function fechaHora(momento: Date | string): string {
   return FECHA_HORA.format(typeof momento === 'string' ? new Date(momento) : momento);
 }
 
+const HORA = new Intl.DateTimeFormat('es-AR', {
+  timeZone: 'America/Argentina/Buenos_Aires',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+/** `21:05`, en hora de Buenos Aires. */
+export function hora(momento: Date | string): string {
+  return HORA.format(typeof momento === 'string' ? new Date(momento) : momento);
+}
+
 /** `1234,5` (lo que entrega CampoNumero) → `123450`. Sin floats: se separa el texto. `null` si no es un importe. */
 export function centavosDesdeTexto(limpio: string): number | null {
   if (!/^\d+(,\d{0,2})?$/.test(limpio)) return null;

@@ -43,6 +43,69 @@
       "when": 1793241763355,
       "tag": "0005_control",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793278846183,
+      "tag": "0006_plano_detallado",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793359324345,
+      "tag": "0007_reservas",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793360018829,
+      "tag": "0008_fotos_productos",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793398972558,
+      "tag": "0009_fotos_insumos",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793401446086,
+      "tag": "0010_facturas_y_pagos",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793402579034,
+      "tag": "0011_mercado_pago",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793414009442,
+      "tag": "0012_composicion_insumos",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793414588629,
+      "tag": "0013_movimiento_cambio_medida",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793416947918,
+      "tag": "0014_productos_con_stock",
+      "breakpoints": true
     }
   ]
 }

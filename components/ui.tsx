@@ -177,17 +177,18 @@ export function Metrica({
   tono?: TonoInsignia;
 }) {
   return (
-    <div className="tarjeta p-5">
-      <p className="text-sm text-tinta-tenue">{etiqueta}</p>
+    <div className="tarjeta min-w-0 p-4 sm:p-5">
+      <p className="text-xs text-tinta-tenue sm:text-sm">{etiqueta}</p>
       <p
         className={cn(
-          'mt-1.5 text-2xl font-semibold tracking-tight',
+          // Un monto de decenas de millones tiene que entrar entero: de a dos en el teléfono y de a cuatro en escritorio.
+          'mt-1.5 whitespace-nowrap text-base font-semibold tracking-tight tabular-nums sm:text-xl',
           tono === 'acento' ? 'text-acento' : 'text-tinta',
         )}
       >
         {valor}
       </p>
-      {detalle ? <p className="mt-1 text-sm text-tinta-tenue">{detalle}</p> : null}
+      {detalle ? <p className="mt-1 text-xs text-tinta-tenue sm:text-sm">{detalle}</p> : null}
     </div>
   );
 }
@@ -234,7 +235,8 @@ export function Td({ children, className }: { children: ReactNode; className?: s
   return (
     <td
       className={cn(
-        'border-b border-borde/50 px-3 py-3 align-middle text-tinta first:pl-0 last:pr-0',
+        // Un monto no se parte: con el $ en un renglón y el número en otro no se lee.
+        'border-b border-borde/50 px-3 py-3 align-middle text-tinta first:pl-0 last:pr-0 [&.tabular-nums]:whitespace-nowrap',
         className,
       )}
     >

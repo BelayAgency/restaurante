@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/cn';
@@ -108,6 +108,7 @@ function Contenido({ children }: { children: ReactNode }) {
 }
 
 interface PropsBoton extends ButtonHTMLAttributes<HTMLButtonElement>, Aspecto {
+  ref?: Ref<HTMLButtonElement>;
   children: ReactNode;
   /**
    * Muestra el spinner y deshabilita el botón. El label NO se reemplaza por
@@ -159,7 +160,17 @@ export function BotonEnlace({
   ancho,
   className,
   children,
-}: Aspecto & { href: string; className?: string; children: ReactNode }) {
+  descargar,
+}: Aspecto & { href: string; className?: string; children: ReactNode; descargar?: boolean }) {
+  // Un archivo (un PDF de una ruta de API) no es una página: con Link, Next intentaría navegarlo.
+  if (descargar) {
+    return (
+      <a href={href} download className={clases({ variante, tamano, soloIcono, ancho }, className)}>
+        <Relleno variante={variante} />
+        <Contenido>{children}</Contenido>
+      </a>
+    );
+  }
   return (
     <Link href={href} className={clases({ variante, tamano, soloIcono, ancho }, className)}>
       <Relleno variante={variante} />

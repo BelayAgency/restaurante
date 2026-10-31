@@ -1,16 +1,17 @@
 'use client';
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useTransition } from 'react';
-import { BellRing, CheckCheck, ChefHat, CloudOff, RotateCcw, Tablet } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useTransition, type ReactNode } from 'react';
+import { CheckCheck, ChefHat, CloudOff, MessageSquareText, RotateCcw, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { CargandoTarjeta } from '@/components/carga';
 import { Selector } from '@/components/selector';
-import { EstadoVacio, Insignia, Tarjeta, TituloSeccion } from '@/components/ui';
-import { comandaDemorada, reducirCocina, type Comanda } from '@/dominio/reductores/cocina';
-import { reducirSalon } from '@/dominio/reductores/salon';
+import { EstadoVacio, Insignia, TituloSeccion } from '@/components/ui';
+import type { Catalogo } from '@/dominio/catalogo';
+import { comandaDemorada, reducirCocina, type Comanda, type ItemComanda } from '@/dominio/reductores/cocina';
+import { reducirSalon, type EstadoSalon } from '@/dominio/reductores/salon';
 import { duracionCorta, minutosDesde, useAhora } from '@/lib/ahora';
 import { cn } from '@/lib/cn';
+import { hora } from '@/lib/formato';
 import { baseLocal, guardarAjuste } from '@/local/base';
 import { useConsultaLocal } from '@/local/consulta';
 import { useDatosLocales, useOperadorDe } from '@/local/salon';
@@ -20,6 +21,20 @@ import { useSesion } from '../sesion-cliente';
 
 const TODAS = 'todas';
 const MINUTOS_ATENCION = 10;
+
+type Urgencia = 'normal' | 'atencion' | 'demorada';
+
+const BANDA: Record<Urgencia, string> = {
+  normal: 'bg-lienzo',
+  atencion: 'bg-alerta-tenue',
+  demorada: 'bg-error-tenue',
+};
+
+const TIEMPO: Record<Urgencia, string> = {
+  normal: 'text-tinta',
+  atencion: 'text-alerta',
+  demorada: 'text-error',
+};
 
 /**
  * Un aviso corto cuando entra una comanda. El navegador no deja sonar nada
@@ -49,68 +64,125 @@ function useCampana() {
   }, []);
 }
 
+function urgenciaDe(comanda: Comanda, ahora: number): Urgencia {
+  if (comandaDemorada(comanda, ahora)) return 'demorada';
+  return minutosDesde(comanda.enviadaEn, ahora) >= MINUTOS_ATENCION ? 'atencion' : 'normal';
+}
+
+/** De dónde viene la comanda: la mesa, o el nombre del pedido sin mesa. */
+function origenDe(comanda: Comanda, salon: EstadoSalon, catalogo: Catalogo): { titulo: string; icono: ReactNode; mozo: string } {
+  const cuenta = salon.cuentas.get(comanda.cuentaId);
+  const mozo = nombreOperador(catalogo, cuenta?.mozoId ?? comanda.enviadaPor);
+  if (!cuenta) return { titulo: 'Cuenta', icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo };
+  if (cuenta.tipo === 'mesa') return { titulo: nombreMesa(catalogo, cuenta.mesaId), icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo };
+  if (cuenta.tipo === 'llevar') return { titulo: cuenta.nombre ?? 'Para llevar', icono: <ShoppingBag size={16} strokeWidth={1.75} />, mozo };
+  return { titulo: cuenta.nombre ?? 'Mostrador', icono: <Store size={16} strokeWidth={1.75} />, mozo };
+}
+
+function FilaItemComanda({ item }: { item: ItemComanda }) {
+  return (
+    <li className="flex gap-3 border-b border-borde/60 py-2.5 last:border-0">
+      <span
+        className={cn(
+          'grid h-7 min-w-7 shrink-0 place-items-center rounded-md px-1.5 text-sm font-semibold tabular-nums',
+          item.anulado ? 'bg-error-tenue text-error' : 'bg-lienzo text-tinta',
+        )}
+      >
+        {item.cantidad}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={cn('text-base font-medium leading-7', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>{item.nombre}</p>
+        {item.anulado ? <p className="text-xs font-medium text-error">Anulado: no preparar</p> : null}
+        {item.modificadores.length ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {item.modificadores.map((m) => (
+              <span key={m} className="rounded-md bg-lienzo px-1.5 py-0.5 text-xs font-medium text-tinta-suave">
+                {m}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {item.nota ? (
+          <p className="mt-1.5 flex items-start gap-1.5 rounded-md bg-alerta-tenue px-2 py-1 text-sm text-alerta">
+            <MessageSquareText size={14} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
+          </p>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
 function TarjetaComanda({
   comanda,
-  titulo,
-  mozo,
+  origen,
+  estacion,
   ahora,
   operador,
 }: {
   comanda: Comanda;
-  titulo: string;
-  mozo: string;
+  origen: { titulo: string; icono: ReactNode; mozo: string };
+  /** El nombre de la estación, sólo cuando se están viendo todas. */
+  estacion: string | null;
   ahora: number;
   operador: Operador;
 }) {
   const registrar = useRegistrar(operador);
   const [ocupado, iniciar] = useTransition();
-  const minutos = minutosDesde(comanda.enviadaEn, ahora);
-  const demorada = comandaDemorada(comanda, ahora);
+  const urgencia = urgenciaDe(comanda, ahora);
   const datos = { envioId: comanda.envioId, estacionId: comanda.estacionId };
+  const aPreparar = comanda.items.filter((i) => !i.anulado).reduce((s, i) => s + i.cantidad, 0);
+  const terminar = () => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, datos)));
 
   return (
-    <Tarjeta
-      padding={false}
-      className={cn('flex flex-col p-4', demorada ? 'ring-2 ring-error' : minutos >= MINUTOS_ATENCION ? 'ring-2 ring-alerta' : undefined)}
-    >
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-lg font-semibold text-tinta">{titulo}</p>
-          <p className="text-xs text-tinta-tenue">{mozo}</p>
-        </div>
-        <div className="text-right">
-          <p className={cn('text-lg font-semibold tabular-nums', demorada ? 'text-error' : minutos >= MINUTOS_ATENCION ? 'text-alerta' : 'text-tinta')}>
-            {duracionCorta(minutos)}
+    <article className="tarjeta flex flex-col overflow-hidden">
+      <header className={cn('flex items-start justify-between gap-3 px-4 py-3', BANDA[urgencia])}>
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-lg font-semibold text-tinta">
+            <span className="text-tinta-tenue">{origen.icono}</span>
+            <span className="truncate">{origen.titulo}</span>
           </p>
-          {comanda.estado === 'en_preparacion' ? <Insignia tono="acento">En preparación</Insignia> : null}
+          <p className="truncate text-xs text-tinta-suave">
+            {origen.mozo}
+            {estacion ? ` · ${estacion}` : ''}
+          </p>
         </div>
-      </div>
-      <ul className="mb-4 flex-1">
+        <div className="shrink-0 text-right">
+          <p className={cn('text-2xl font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</p>
+          <p className="mt-1 text-xs tabular-nums text-tinta-tenue">Entró {hora(comanda.enviadaEn)}</p>
+        </div>
+      </header>
+
+      <ul className="flex-1 px-4 py-1">
         {comanda.items.map((item) => (
-          <li key={item.id} className="border-b border-borde/60 py-2 last:border-0">
-            {item.anulado ? <Insignia tono="error">Anulado: no preparar</Insignia> : null}
-            <p className={item.anulado ? 'text-base text-tinta-tenue line-through' : 'text-base text-tinta'}>
-              <span className="font-semibold tabular-nums">{item.cantidad} ×</span> {item.nombre}
-            </p>
-            {item.modificadores.length ? <p className="text-sm font-medium text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
-            {item.nota ? <p className="text-sm italic text-alerta">«{item.nota}»</p> : null}
-          </li>
+          <FilaItemComanda key={item.id} item={item} />
         ))}
       </ul>
-      <div className="grid grid-cols-2 gap-2">
-        <Boton
-          variante="secundario"
-          tamano="lg"
-          disabled={ocupado || comanda.estado !== 'pendiente'}
-          onClick={() => iniciar(async () => void (await registrar('comanda_iniciada', comanda.cuentaId, datos)))}
-        >
-          <ChefHat size={16} strokeWidth={1.5} /> Empezar
+
+      <footer className="flex items-center gap-2 border-t border-borde px-4 py-3">
+        <span className="mr-auto text-xs text-tinta-tenue">
+          {aPreparar} {aPreparar === 1 ? 'plato' : 'platos'}
+        </span>
+        <Boton variante="primario" disabled={ocupado} onClick={terminar}>
+          <CheckCheck size={15} strokeWidth={1.5} /> Listo
         </Boton>
-        <Boton variante="primario" tamano="lg" disabled={ocupado} onClick={() => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, datos)))}>
-          <CheckCheck size={16} strokeWidth={1.5} /> Listo
-        </Boton>
-      </div>
-    </Tarjeta>
+      </footer>
+    </article>
+  );
+}
+
+function Carril({ titulo, cantidad, vacio, children }: { titulo: string; cantidad: number; vacio: string; children: ReactNode }) {
+  return (
+    <section className="flex min-w-0 flex-col gap-3">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-tinta-suave">
+        {titulo}
+        <span className="rounded-md bg-lienzo px-1.5 text-xs tabular-nums text-tinta-tenue">{cantidad}</span>
+      </h2>
+      {cantidad ? (
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">{children}</div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-borde px-4 py-6 text-center text-sm text-tinta-tenue">{vacio}</p>
+      )}
+    </section>
   );
 }
 
@@ -130,6 +202,7 @@ export function PantallaCocina() {
   const estacion = estacionGuardada ?? TODAS;
 
   const visibles = [...comandas.values()].filter((c) => estacion === TODAS || c.estacionId === estacion);
+  // La más vieja primero: se cocina en el orden en que entró.
   const activas = visibles.filter((c) => c.estado !== 'lista').sort((a, b) => a.enviadaEn.localeCompare(b.enviadaEn));
   const listas = visibles
     .filter((c) => c.estado === 'lista')
@@ -144,35 +217,18 @@ export function PantallaCocina() {
     conocidas.current = actuales;
   }, [claves, campana]);
 
-  if (!datos || !salon) return <CargandoTarjeta />;
-  if (!datos.dispositivoId) {
-    return (
-      <Tarjeta>
-        <EstadoVacio
-          icono={<Tablet size={28} strokeWidth={1.5} />}
-          titulo="Este dispositivo no está registrado"
-          accion={
-            <Link href="/dispositivo" className="text-sm font-medium text-acento hover:underline">
-              Ir a Este dispositivo
-            </Link>
-          }
-        />
-      </Tarjeta>
-    );
-  }
+  if (!datos?.dispositivoId || !salon) return <CargandoTarjeta />;
 
   const { catalogo } = datos;
   const operador: Operador = catalogo.operadores.find((o) => o.id === operadorId) ?? { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol };
+  const nombreEstacion = (id: string) => (estacion === TODAS ? (catalogo.estaciones.find((e) => e.id === id)?.nombre ?? null) : null);
 
-  function tituloDe(comanda: Comanda) {
-    const cuenta = salon!.cuentas.get(comanda.cuentaId);
-    if (!cuenta) return 'Cuenta';
-    if (cuenta.tipo === 'mesa') return nombreMesa(catalogo, cuenta.mesaId);
-    return cuenta.nombre ?? (cuenta.tipo === 'llevar' ? 'Para llevar' : 'Mostrador');
-  }
+  const tarjeta = (c: Comanda) => (
+    <TarjetaComanda key={c.clave} comanda={c} origen={origenDe(c, salon, catalogo)} estacion={nombreEstacion(c.estacionId)} ahora={ahora} operador={operador} />
+  );
 
   return (
-    <>
+    <div className="contenido-ancho">
       <TituloSeccion
         accion={
           <div className="w-56">
@@ -187,60 +243,48 @@ export function PantallaCocina() {
         Cocina
       </TituloSeccion>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-tinta-suave">
-        <span className="inline-flex items-center gap-1">
-          <BellRing size={14} strokeWidth={1.5} /> Tocá la pantalla una vez para que suene cuando entra una comanda.
-        </span>
-        {!sync.enLinea ? (
+      {!sync.enLinea ? (
+        <div className="mb-4 flex flex-wrap gap-2">
           <Insignia tono="alerta">
             <CloudOff size={12} strokeWidth={2} aria-hidden="true" /> Sin conexión: lo que manden otros dispositivos llega al volver
           </Insignia>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {activas.length === 0 ? (
-        <Tarjeta>
+        <div className="tarjeta p-5 sm:p-6">
           <EstadoVacio icono={<ChefHat size={28} strokeWidth={1.5} />} titulo="No hay comandas pendientes" />
-        </Tarjeta>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {activas.map((c) => {
-            const cuenta = salon.cuentas.get(c.cuentaId);
-            return (
-              <TarjetaComanda
-                key={c.clave}
-                comanda={c}
-                titulo={tituloDe(c)}
-                mozo={cuenta ? nombreOperador(catalogo, cuenta.mozoId) : nombreOperador(catalogo, c.enviadaPor)}
-                ahora={ahora}
-                operador={operador}
-              />
-            );
-          })}
         </div>
+      ) : (
+        <Carril titulo="Sin empezar" cantidad={activas.length} vacio="Nada nuevo">
+          {activas.map(tarjeta)}
+        </Carril>
       )}
 
       {listas.length ? (
         <section className="mt-8">
-          <TituloSeccion>Últimas listas</TituloSeccion>
-          <div className="flex flex-col gap-2">
+          <h2 className="mb-3 text-sm font-medium text-tinta-suave">Últimas listas</h2>
+          <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">
             {listas.map((c) => (
-              <ListaReciente key={c.clave} comanda={c} titulo={tituloDe(c)} operador={operador} />
+              <ListaReciente key={c.clave} comanda={c} titulo={origenDe(c, salon, catalogo).titulo} ahora={ahora} operador={operador} />
             ))}
           </div>
         </section>
       ) : null}
-    </>
+    </div>
   );
 }
 
-function ListaReciente({ comanda, titulo, operador }: { comanda: Comanda; titulo: string; operador: Operador }) {
+function ListaReciente({ comanda, titulo, ahora, operador }: { comanda: Comanda; titulo: string; ahora: number; operador: Operador }) {
   const registrar = useRegistrar(operador);
   const [ocupado, iniciar] = useTransition();
   return (
-    <Tarjeta padding={false} className="flex items-center justify-between gap-3 px-4 py-3">
+    <div className="tarjeta flex items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-tinta">{titulo}</p>
+        <p className="text-sm font-medium text-tinta">
+          {titulo}
+          {comanda.listaEn ? <span className="ml-2 text-xs font-normal tabular-nums text-tinta-tenue">hace {duracionCorta(minutosDesde(comanda.listaEn, ahora))}</span> : null}
+        </p>
         <p className="truncate text-xs text-tinta-tenue">{comanda.items.map((i) => `${i.cantidad} × ${i.nombre}`).join(', ')}</p>
       </div>
       <Boton
@@ -251,6 +295,6 @@ function ListaReciente({ comanda, titulo, operador }: { comanda: Comanda; titulo
       >
         <RotateCcw size={13} strokeWidth={1.5} /> Reabrir
       </Boton>
-    </Tarjeta>
+    </div>
   );
 }

@@ -27,7 +27,7 @@ export async function POST(pedido: Request) {
       else invalidos.push(String((crudo as { id?: unknown } | null)?.id ?? ''));
     }
 
-    const recepciones = await recibirEventos(actor, cuerpo.data.dispositivoId, validos, cuerpo.data.horaDispositivo);
+    const recepciones = await recibirEventos(actor, cuerpo.data.dispositivoId, validos, cuerpo.data.horaDispositivo, pedido.headers.get('user-agent'));
     return Response.json({ recepciones, invalidos, horaServidor: new Date().toISOString() });
   } catch (error) {
     return respuestaDeError(error);
@@ -38,12 +38,12 @@ export async function GET(pedido: Request) {
   // Sin esto el build intenta prerenderizarla y choca con la sesión.
   await connection();
   try {
-    await exigirSesion();
+    const actor = await exigirSesion();
     const parametros = new URL(pedido.url).searchParams;
     const dispositivoId = z.uuid().safeParse(parametros.get('dispositivo'));
     const desde = z.coerce.number().int().min(0).safeParse(parametros.get('desde') ?? '0');
     if (!dispositivoId.success || !desde.success) return Response.json({ error: 'Pedido inválido' }, { status: 422 });
-    return Response.json(await eventosDesde(dispositivoId.data, desde.data), { headers: { 'cache-control': 'no-store' } });
+    return Response.json(await eventosDesde(actor, dispositivoId.data, desde.data, pedido.headers.get('user-agent')), { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return respuestaDeError(error);
   }

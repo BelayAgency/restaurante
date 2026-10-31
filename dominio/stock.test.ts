@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cantidadBruta, consumoDeReceta, costoPorcion, costoPromedio, foodCostPorcentaje } from './stock';
+import { cantidadBruta, consumoDeReceta, costoPorcion, costoPromedio, factorDeConversion, foodCostPorcentaje } from './stock';
 
 describe('recetas', () => {
   it('con merma hace falta más bruto que neto', () => {
@@ -33,5 +33,27 @@ describe('costoPromedio', () => {
   it('sin stock previo manda la compra', () => {
     expect(costoPromedio(0, 2, 500, 4)).toBe(4);
     expect(costoPromedio(-200, 2, 500, 4)).toBe(4);
+  });
+});
+
+describe('cambio de medida', () => {
+  const botella = { unidad: 'u' as const, contenidoPorUnidad: null };
+  const enMl = { unidad: 'ml' as const, contenidoPorUnidad: 750 };
+
+  it('de unidades a ml multiplica por lo que trae cada una', () => {
+    expect(factorDeConversion(botella, enMl)).toBe(750);
+    expect(factorDeConversion(enMl, botella)).toBeCloseTo(1 / 750);
+  });
+
+  it('entre dos medidas con composición pasa por la unidad', () => {
+    expect(factorDeConversion(enMl, { unidad: 'parte', contenidoPorUnidad: 5 })).toBeCloseTo(5 / 750);
+  });
+
+  it('la misma medida no cambia nada, aunque cambie lo que trae', () => {
+    expect(factorDeConversion(enMl, { unidad: 'ml', contenidoPorUnidad: 1000 })).toBe(1);
+  });
+
+  it('sin composición no hay cuenta: ml a g depende de qué sea', () => {
+    expect(factorDeConversion({ unidad: 'ml', contenidoPorUnidad: null }, { unidad: 'g', contenidoPorUnidad: 500 })).toBeNull();
   });
 });

@@ -23,6 +23,8 @@ export interface Item {
   cargadoPor: string;
   cargadoEn: string;
   enviadoEn: string | null;
+  /** La orden con la que se cargó; `null` en los ítems de antes de que existiera. */
+  ordenId: string | null;
   /** Se cargó o se tocó después de una precuenta. */
   trasPrecuenta: boolean;
   /** Anulado con autorización: sigue a la vista, no se cobra. */
@@ -108,6 +110,16 @@ export function totalCuenta(cuenta: Cuenta): number {
   return Math.max(0, total - descuentos);
 }
 
+/** Un Map conserva el orden de inserción: para que la línea nueva quede al lado de la suya, se rearma. */
+function insertarDespues(items: Map<string, Item>, despuesDe: string, nuevo: Item): Map<string, Item> {
+  const resultado = new Map<string, Item>();
+  for (const [id, item] of items) {
+    resultado.set(id, item);
+    if (id === despuesDe) resultado.set(nuevo.id, nuevo);
+  }
+  return resultado;
+}
+
 function marcarSiHayPrecuenta(cuenta: Cuenta) {
   if (cuenta.precuentas.length > 0) cuenta.cambiosTrasPrecuenta += 1;
 }
@@ -185,6 +197,7 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
           cargadoPor: evento.operadorId,
           cargadoEn: evento.creadoEnDispositivo,
           enviadoEn: null,
+          ordenId: d.ordenId ?? null,
           trasPrecuenta: cuenta.precuentas.length > 0,
           anulado: false,
           cortesia: false,
@@ -254,6 +267,9 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
       case 'cuenta_pedida':
         cuenta.pidioCuenta = true;
         break;
+      case 'cuenta_pedida_cancelada':
+        cuenta.pidioCuenta = false;
+        break;
       case 'cobro_registrado': {
         const d = evento.datos;
         if (cuenta.cobros.some((c) => c.id === d.cobroId)) break;
@@ -287,9 +303,18 @@ export function reducirSalon(eventos: Iterable<EventoNuevo>): EstadoSalon {
           anotar(evento, 'El ítem no está en la cuenta');
           break;
         }
-        if (evento.tipo === 'item_anulado') item.anulado = true;
-        else if (evento.tipo === 'item_cortesia') item.cortesia = true;
-        else {
+        if (evento.tipo === 'item_anulado' || evento.tipo === 'item_cortesia') {
+          const marca = evento.tipo === 'item_anulado' ? { anulado: true } : { cortesia: true };
+          const cantidad = evento.datos.cantidad;
+          if (cantidad === undefined || cantidad >= item.cantidad) Object.assign(item, marca);
+          else {
+            // Sólo algunas unidades: esas quedan como su propia línea al lado
+            // (tachada, o en cero si se regalan) y el ítem sigue con las que se cobran.
+            item.cantidad -= cantidad;
+            const id = `${item.id}~${evento.id}`;
+            cuenta.items = insertarDespues(cuenta.items, item.id, { ...item, id, cantidad, ...marca });
+          }
+        } else {
           item.precioOriginalCentavos ??= item.precioCentavos;
           item.precioCentavos = evento.datos.precioCentavos;
         }

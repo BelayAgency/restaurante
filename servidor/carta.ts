@@ -1,10 +1,11 @@
 import 'server-only';
 import { and, asc, eq, ilike, isNull } from 'drizzle-orm';
 import { db } from '@/db/cliente';
-import { categorias, estaciones, gruposModificador, modificadores, preciosProducto, productos, productosGrupos } from '@/db/esquema';
+import { categorias, estaciones, fotosProducto, gruposModificador, modificadores, preciosProducto, productos, productosGrupos } from '@/db/esquema';
 import { puede } from '@/dominio/permisos';
 import { ErrorAcceso, ErrorDominio, type UsuarioSesion } from '@/lib/sesion';
 import { auditar } from './auditoria';
+import { validarFoto } from './fotos';
 
 /**
  * La carta se administra con conexión y baja a los dispositivos con el
@@ -28,9 +29,10 @@ export async function listarCarta(actor: UsuarioSesion, filtro: { busqueda?: str
     db.select().from(gruposModificador).where(isNull(gruposModificador.archivadoEn)).orderBy(asc(gruposModificador.nombre)),
     db.select().from(modificadores).where(isNull(modificadores.archivadoEn)).orderBy(asc(modificadores.orden), asc(modificadores.nombre)),
     db
-      .select({ producto: productos, precioCentavos: preciosProducto.precioCentavos })
+      .select({ producto: productos, precioCentavos: preciosProducto.precioCentavos, fotoVersion: fotosProducto.version })
       .from(productos)
       .innerJoin(preciosProducto, and(eq(preciosProducto.productoId, productos.id), isNull(preciosProducto.archivadoEn)))
+      .leftJoin(fotosProducto, eq(fotosProducto.productoId, productos.id))
       .where(
         and(
           isNull(productos.archivadoEn),
@@ -52,7 +54,7 @@ export async function listarCarta(actor: UsuarioSesion, filtro: { busqueda?: str
       multiple: g.multiple,
       modificadores: filasModificadores.filter((m) => m.grupoId === g.id).map(({ id, nombre, precioCentavos }) => ({ id, nombre, precioCentavos })),
     })),
-    productos: filasProductos.map(({ producto, precioCentavos }) => ({
+    productos: filasProductos.map(({ producto, precioCentavos, fotoVersion }) => ({
       id: producto.id,
       nombre: producto.nombre,
       categoriaId: producto.categoriaId,
@@ -60,6 +62,7 @@ export async function listarCarta(actor: UsuarioSesion, filtro: { busqueda?: str
       disponible: producto.disponible,
       precioCentavos,
       grupoIds: relaciones.filter((r) => r.productoId === producto.id).map((r) => r.grupoId),
+      fotoVersion,
     })),
   };
 }
@@ -239,4 +242,30 @@ export async function archivarGrupo(actor: UsuarioSesion, id: string, ip: string
     await tx.delete(productosGrupos).where(eq(productosGrupos.grupoId, id));
   });
   await registrar(actor, 'grupo.archivado', id, {}, ip);
+}
+
+export async function guardarFotoProducto(actor: UsuarioSesion, productoId: string, imagen: Buffer, ip: string | null) {
+  exigirCarta(actor);
+  const tipo = validarFoto(imagen);
+  const [producto] = await db.select({ id: productos.id }).from(productos).where(and(eq(productos.id, productoId), isNull(productos.archivadoEn)));
+  if (!producto) throw new ErrorDominio('El producto no existe');
+  const version = crypto.randomUUID();
+  await db
+    .insert(fotosProducto)
+    .values({ productoId, imagen, tipo, version })
+    .onConflictDoUpdate({ target: fotosProducto.productoId, set: { imagen, tipo, version, subidaEn: new Date() } });
+  await registrar(actor, 'foto.subida', productoId, { bytes: imagen.length }, ip);
+  return version;
+}
+
+export async function quitarFotoProducto(actor: UsuarioSesion, productoId: string, ip: string | null) {
+  exigirCarta(actor);
+  await db.delete(fotosProducto).where(eq(fotosProducto.productoId, productoId));
+  await registrar(actor, 'foto.quitada', productoId, {}, ip);
+}
+
+/** Para servirla: cualquiera con sesión, porque la carta la ven todos los que cargan pedidos. */
+export async function leerFotoProducto(productoId: string) {
+  const [foto] = await db.select({ imagen: fotosProducto.imagen, tipo: fotosProducto.tipo, version: fotosProducto.version }).from(fotosProducto).where(eq(fotosProducto.productoId, productoId));
+  return foto ?? null;
 }

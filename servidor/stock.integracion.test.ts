@@ -13,6 +13,7 @@ import {
   guardarProveedor,
   guardarReceta,
   leerConteo,
+  leerRecetas,
   leerStock,
   registrarCompra,
   registrarConsumoTeorico,
@@ -51,7 +52,7 @@ describe('stock de punta a punta', () => {
   it('dos compras dejan el costo promedio ponderado', async () => {
     insumoId = await guardarInsumo(
       actor,
-      { id: null, nombre: `Bife ancho ${sufijo}`, tipo: 'compra', unidad: 'g', stockMinimo: 0, presentaciones: [{ id: null, nombre: 'Caja 10 kg', cantidadBase: 10_000 }] },
+      { id: null, nombre: `Bife ancho ${sufijo}`, tipo: 'compra', unidad: 'g', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [{ id: null, nombre: 'Caja 10 kg', cantidadBase: 10_000 }] },
       null,
     );
     const proveedorId = await guardarProveedor(actor, { id: null, nombre: `Frigorífico ${sufijo}`, cuit: null }, null);
@@ -136,5 +137,37 @@ describe('stock de punta a punta', () => {
     expect(fila.teorico).toBeCloseTo(666.6667, 2);
     expect(fila.faltante).toBeCloseTo(333.3333, 2);
     expect(fila.valorFaltante).toBeCloseTo(666_666.67, 0);
+  });
+});
+
+describe('cambio de medida', () => {
+  it('de botellas a ml convierte el stock, el mínimo, las presentaciones y las recetas', async () => {
+    const vino = await guardarInsumo(
+      actor,
+      { id: null, nombre: `Malbec ${sufijo}`, tipo: 'compra', unidad: 'u', contenidoPorUnidad: null, stockMinimo: 6, presentaciones: [{ id: null, nombre: 'Caja x 6', cantidadBase: 6 }] },
+      null,
+    );
+    const proveedorId = await guardarProveedor(actor, { id: null, nombre: `Bodega ${sufijo}`, cuit: null }, null);
+    await registrarCompra(actor, { proveedorId, depositoId, numeroFactura: `B-${sufijo}`, fecha: hoy(), lineas: [{ insumoId: vino, presentacionId: null, cantidadPresentaciones: 12, costoCentavos: 1_200_000 }] }, null);
+    await guardarReceta(actor, { productoId, preparacionId: null, rendimiento: 1, lineas: [{ insumoId: vino, cantidad: 0.2, mermaPorcentaje: 0 }] }, null);
+
+    const antes = (await leerStock(actor)).insumos.find((i) => i.id === vino)!;
+    await guardarInsumo(actor, { id: vino, nombre: antes.nombre, tipo: 'compra', unidad: 'ml', contenidoPorUnidad: 750, stockMinimo: 6, presentaciones: antes.presentaciones }, null);
+
+    const despues = (await leerStock(actor)).insumos.find((i) => i.id === vino)!;
+    expect(despues.unidad).toBe('ml');
+    expect(despues.total).toBeCloseTo(9_000);
+    expect(despues.stockMinimo).toBeCloseTo(4_500);
+    expect(despues.presentaciones[0]!.cantidadBase).toBeCloseTo(4_500);
+    // 100.000 centavos la botella son 133,33 el ml: el valor del stock no cambia.
+    expect(despues.total * despues.costoUnitario).toBeCloseTo(antes.total * antes.costoUnitario);
+    const receta = (await leerRecetas(actor)).productos.find((p) => p.id === productoId)!;
+    expect(receta.lineas.find((l) => l.insumoId === vino)!.cantidad).toBeCloseTo(150);
+  });
+
+  it('sin composición sólo cambia la medida, sin error', async () => {
+    const sal = await guardarInsumo(actor, { id: null, nombre: `Sal ${sufijo}`, tipo: 'compra', unidad: 'g', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [] }, null);
+    await guardarInsumo(actor, { id: sal, nombre: `Sal ${sufijo}`, tipo: 'compra', unidad: 'ml', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [] }, null);
+    expect((await leerStock(actor)).insumos.find((i) => i.id === sal)!.unidad).toBe('ml');
   });
 });

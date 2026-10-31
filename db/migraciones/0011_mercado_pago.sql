@@ -1,0 +1,1 @@
+ALTER TYPE "public"."forma_pago_proveedor" ADD VALUE 'mercado_pago' BEFORE 'cheque';

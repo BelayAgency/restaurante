@@ -5,6 +5,7 @@ import {
   categorias,
   elementosPlano,
   estaciones,
+  fotosProducto,
   gruposModificador,
   mediosPago,
   modificadores,
@@ -36,9 +37,10 @@ export async function leerCatalogo(): Promise<Catalogo> {
       db.select().from(estaciones).where(isNull(estaciones.archivadoEn)).orderBy(asc(estaciones.orden), asc(estaciones.nombre)),
       db.select().from(categorias).where(isNull(categorias.archivadoEn)).orderBy(asc(categorias.orden), asc(categorias.nombre)),
       db
-        .select({ producto: productos, precio: preciosProducto })
+        .select({ producto: productos, precio: preciosProducto, fotoVersion: fotosProducto.version })
         .from(productos)
         .innerJoin(preciosProducto, and(eq(preciosProducto.productoId, productos.id), isNull(preciosProducto.archivadoEn)))
+        .leftJoin(fotosProducto, eq(fotosProducto.productoId, productos.id))
         .where(isNull(productos.archivadoEn))
         .orderBy(asc(productos.orden), asc(productos.nombre)),
       db.select().from(gruposModificador).where(isNull(gruposModificador.archivadoEn)).orderBy(asc(gruposModificador.nombre)),
@@ -66,7 +68,7 @@ export async function leerCatalogo(): Promise<Catalogo> {
     elementos: filasElementos.map(sinArchivado),
     estaciones: filasEstaciones.map(sinArchivado),
     categorias: filasCategorias.map(sinArchivado),
-    productos: filasProductos.map(({ producto, precio }) => ({
+    productos: filasProductos.map(({ producto, precio, fotoVersion }) => ({
       id: producto.id,
       nombre: producto.nombre,
       categoriaId: producto.categoriaId,
@@ -75,6 +77,7 @@ export async function leerCatalogo(): Promise<Catalogo> {
       precioId: precio.id,
       precioCentavos: precio.precioCentavos,
       grupoIds: gruposDe.get(producto.id) ?? [],
+      fotoVersion,
     })),
     grupos: [...grupos.values()],
     medios: filasMedios,

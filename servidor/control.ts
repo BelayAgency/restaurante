@@ -148,8 +148,15 @@ function hechosDeControl(todos: EventoNuevo[], idsDelPeriodo: Set<string>, umbra
     };
     const item = 'datos' in evento && evento.datos && 'itemId' in evento.datos ? antes.items.get((evento.datos as { itemId: string }).itemId) : undefined;
 
-    if (evento.tipo === 'item_anulado' && item) hechos.push({ ...base, tipo: 'anulacion', montoCentavos: importeItem(item), detalle: `${item.cantidad} × ${item.nombre}` });
-    if (evento.tipo === 'item_cortesia' && item) hechos.push({ ...base, tipo: 'cortesia', montoCentavos: importeItem(item), detalle: `${item.cantidad} × ${item.nombre}` });
+    if (evento.tipo === 'item_anulado' && item) {
+      // Bajarle la cantidad anula sólo esas unidades: el monto es el de ellas.
+      const cantidad = Math.min((evento.datos as DatosDe<'item_anulado'>).cantidad ?? item.cantidad, item.cantidad);
+      hechos.push({ ...base, tipo: 'anulacion', montoCentavos: importeItem({ ...item, cantidad }), detalle: `${cantidad} × ${item.nombre}` });
+    }
+    if (evento.tipo === 'item_cortesia' && item) {
+      const cantidad = Math.min((evento.datos as DatosDe<'item_cortesia'>).cantidad ?? item.cantidad, item.cantidad);
+      hechos.push({ ...base, tipo: 'cortesia', montoCentavos: importeItem({ ...item, cantidad }), detalle: `${cantidad} × ${item.nombre}` });
+    }
     if (evento.tipo === 'precio_modificado' && item) {
       const nuevo = (evento.datos as DatosDe<'precio_modificado'>).precioCentavos;
       hechos.push({ ...base, tipo: 'precio', montoCentavos: (item.precioCentavos - nuevo) * item.cantidad, detalle: `${item.nombre}: de ${item.precioCentavos} a ${nuevo}` });

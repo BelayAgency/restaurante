@@ -33,7 +33,7 @@ export function imprimirPrecuenta(cuenta: Cuenta, encabezado: { local: string; m
   .pie { text-align: center; margin-top: 12px; }
 </style></head><body>
 <h1>${escapar(encabezado.local)}</h1>
-<p class="dato">${escapar(encabezado.mesa)} · ${cuenta.comensales} ${cuenta.comensales === 1 ? 'comensal' : 'comensales'}</p>
+<p class="dato">${escapar(encabezado.mesa)}${cuenta.comensales ? ` · ${cuenta.comensales} ${cuenta.comensales === 1 ? 'comensal' : 'comensales'}` : ''}</p>
 <p class="dato">Atendió: ${escapar(encabezado.mozo)}</p>
 <p class="dato">${fechaHora(new Date())}</p>
 <table>${filas}<tr class="total"><td>Total</td><td class="num">${pesosDesdeCentavos(totalCuenta(cuenta))}</td></tr></table>

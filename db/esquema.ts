@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -199,7 +201,7 @@ export const sectores = pgTable('sectores', {
   archivadoEn: momento('archivado_en'),
 });
 
-export const tipoElementoPlano = pgEnum('tipo_elemento_plano', ['mesa', 'pared', 'barra', 'columna', 'puerta', 'cocina']);
+export const tipoElementoPlano = pgEnum('tipo_elemento_plano', ['mesa', 'pared', 'barra', 'columna', 'puerta', 'cocina', 'ventana', 'bano', 'caja', 'planta', 'texto']);
 export const formaElemento = pgEnum('forma_elemento', ['redonda', 'rectangular']);
 
 export const elementosPlano = pgTable(
@@ -218,6 +220,8 @@ export const elementosPlano = pgTable(
     rotacion: integer('rotacion').notNull().default(0),
     numeroMesa: integer('numero_mesa'),
     capacidad: integer('capacidad'),
+    // El nombre que se ve en el plano: «Barra principal», «Terraza», el texto de un cartel.
+    etiqueta: text('etiqueta'),
     archivadoEn: momento('archivado_en'),
   },
   (t) => [
@@ -252,12 +256,19 @@ export const productos = pgTable(
     estacionId: uuid('estacion_id')
       .notNull()
       .references(() => estaciones.id),
+    // Se usa como «vendible»: apagado, el producto no aparece para cargar en una cuenta.
     disponible: boolean('disponible').notNull().default(true),
     orden: integer('orden').notNull().default(0),
+    // Un producto con stock que también se vende (el agua, el vino por botella):
+    // la venta descuenta de ese insumo. Sin él, el producto descuenta su receta.
+    insumoId: uuid('insumo_id').references((): AnyPgColumn => insumos.id),
     creadoEn: momento('creado_en').notNull().defaultNow(),
     archivadoEn: momento('archivado_en'),
   },
-  (t) => [index('productos_categoria_idx').on(t.categoriaId)],
+  (t) => [
+    index('productos_categoria_idx').on(t.categoriaId),
+    uniqueIndex('producto_insumo_vigente_idx').on(t.insumoId).where(sql`${t.archivadoEn} is null and ${t.insumoId} is not null`),
+  ],
 );
 
 // Un precio no se edita: se archiva y se crea otro. Lo que se cobró en cada
@@ -343,7 +354,7 @@ export const diasOperativos = pgTable('dias_operativos', {
 const cantidad = (nombre: string) => numeric(nombre, { precision: 18, scale: 4, mode: 'number' });
 const costoUnitario = (nombre: string) => numeric(nombre, { precision: 18, scale: 6, mode: 'number' });
 
-export const unidadBase = pgEnum('unidad_base', ['g', 'ml', 'u']);
+export const unidadBase = pgEnum('unidad_base', ['g', 'ml', 'u', 'parte']);
 export const tipoInsumo = pgEnum('tipo_insumo', ['compra', 'preparacion']);
 
 export const depositos = pgTable('depositos', {
@@ -360,6 +371,9 @@ export const insumos = pgTable('insumos', {
   tipo: tipoInsumo('tipo').notNull().default('compra'),
   unidad: unidadBase('unidad').notNull(),
   stockMinimo: cantidad('stock_minimo').notNull().default(0),
+  // Cuánto trae cada unidad física en la medida del insumo: una botella de Cabernet medido en ml, 750.
+  // Null cuando se mide por unidad (es 1) o es una preparación, que rinde lo que diga su receta.
+  contenidoPorUnidad: cantidad('contenido_por_unidad'),
   costoUnitario: costoUnitario('costo_unitario').notNull().default(0),
   archivadoEn: momento('archivado_en'),
 });
@@ -435,20 +449,75 @@ export const proveedores = pgTable('proveedores', {
   archivadoEn: momento('archivado_en'),
 });
 
-export const compras = pgTable('compras', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  proveedorId: uuid('proveedor_id')
+export const tipoComprobanteCompra = pgEnum('tipo_comprobante_compra', ['factura', 'nota_credito']);
+
+// Un comprobante del proveedor: lo que se le debe (o, una nota de crédito, lo
+// que descuenta). El total se carga como dice el papel; las líneas de insumos
+// son optativas y, si están, son las que mueven el stock. No se borra ni se
+// pisa: se anula con motivo, y cada corrección deja la versión anterior en
+// `revisiones_compra`.
+export const compras = pgTable(
+  'compras',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proveedorId: uuid('proveedor_id')
+      .notNull()
+      .references(() => proveedores.id),
+    tipo: tipoComprobanteCompra('tipo').notNull().default('factura'),
+    /** Adónde entró la mercadería. Sin líneas de insumos no hay. */
+    depositoId: uuid('deposito_id').references(() => depositos.id),
+    numeroFactura: text('numero_factura').notNull(),
+    fecha: text('fecha').notNull(),
+    totalCentavos: bigint('total_centavos', { mode: 'number' }).notNull(),
+    observacion: text('observacion'),
+    /** Mientras se reclama, los pagos no la cancelan: el reparto la saltea. */
+    enReclamo: boolean('en_reclamo').notNull().default(false),
+    revision: integer('revision').notNull().default(1),
+    registradaPorId: text('registrada_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    registradaEn: momento('registrada_en').notNull().defaultNow(),
+    anuladaEn: momento('anulada_en'),
+    anuladaPorId: text('anulada_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    motivoAnulacion: text('motivo_anulacion'),
+  },
+  (t) => [index('compras_proveedor_idx').on(t.proveedorId, t.fecha)],
+);
+
+export const revisionesCompra = pgTable('revisiones_compra', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  compraId: uuid('compra_id')
     .notNull()
-    .references(() => proveedores.id),
-  depositoId: uuid('deposito_id')
-    .notNull()
-    .references(() => depositos.id),
-  numeroFactura: text('numero_factura').notNull(),
-  fecha: text('fecha').notNull(),
-  totalCentavos: bigint('total_centavos', { mode: 'number' }).notNull(),
-  registradaPorId: text('registrada_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
-  registradaEn: momento('registrada_en').notNull().defaultNow(),
+    .references(() => compras.id),
+  /** La revisión que quedó reemplazada, con sus datos tal como estaban. */
+  revision: integer('revision').notNull(),
+  anterior: jsonb('anterior').$type<Record<string, unknown>>().notNull(),
+  corregidaPorId: text('corregida_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+  corregidaEn: momento('corregida_en').notNull().defaultNow(),
 });
+
+export const formaPagoProveedor = pgEnum('forma_pago_proveedor', ['efectivo', 'transferencia', 'mercado_pago', 'cheque', 'tarjeta']);
+
+// Se le paga al proveedor, no a una factura: el pago se reparte solo, de la
+// factura más vieja a la más nueva (`dominio/cuenta-corriente.ts`). El reparto
+// no se guarda: se calcula, así anular o corregir algo lo reacomoda todo.
+export const pagosProveedor = pgTable(
+  'pagos_proveedor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proveedorId: uuid('proveedor_id')
+      .notNull()
+      .references(() => proveedores.id),
+    fecha: text('fecha').notNull(),
+    importeCentavos: bigint('importe_centavos', { mode: 'number' }).notNull(),
+    forma: formaPagoProveedor('forma').notNull(),
+    observacion: text('observacion'),
+    registradoPorId: text('registrado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    registradoEn: momento('registrado_en').notNull().defaultNow(),
+    anuladoEn: momento('anulado_en'),
+    anuladoPorId: text('anulado_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    motivoAnulacion: text('motivo_anulacion'),
+  },
+  (t) => [index('pagos_proveedor_idx').on(t.proveedorId, t.fecha)],
+);
 
 export const lineasCompra = pgTable('lineas_compra', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -475,6 +544,8 @@ export const tipoMovimiento = pgEnum('tipo_movimiento', [
   'vencimiento',
   'comida_personal',
   'ajuste_conteo',
+  // Pasar el stock a otra medida (24 botellas a 18.000 ml): no es entrada ni salida de mercadería.
+  'cambio_medida',
 ]);
 
 // El stock es la suma de esto. Append-only como el log: una corrección es
@@ -565,3 +636,72 @@ export const alertasVistas = pgTable('alertas_vistas', {
   vistaPorId: text('vista_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
   vistaEn: momento('vista_en').notNull().defaultNow(),
 });
+
+// Las reservas las carga el personal (por teléfono o WhatsApp); la mesa se
+// elige cuando llegan, y sentarlos abre la cuenta con el circuito de siempre.
+export const estadoReserva = pgEnum('estado_reserva', ['pendiente', 'sentada', 'no_vino', 'cancelada']);
+
+export const reservas = pgTable(
+  'reservas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    nombreCliente: text('nombre_cliente').notNull(),
+    telefono: text('telefono'),
+    personas: integer('personas').notNull(),
+    reservadaPara: momento('reservada_para').notNull(),
+    nota: text('nota'),
+    estadoReserva: estadoReserva('estado_reserva').notNull().default('pendiente'),
+    /** La cuenta que se abrió al sentarlos: su id de agregado en los eventos. */
+    cuentaId: text('cuenta_id'),
+    creadaPorId: text('creada_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    creadaEn: momento('creada_en').notNull().defaultNow(),
+    resueltaPorId: text('resuelta_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    resueltaEn: momento('resuelta_en'),
+  },
+  (t) => [index('reservas_para_idx').on(t.reservadaPara)],
+);
+
+const bytes = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+// Va en la base y no en un disco aparte: entra en el backup diario sin otra
+// pieza que mantener, y son pocas y chicas (el navegador las achica al subirlas).
+// Una tabla propia para no arrastrar los bytes en cada consulta de productos.
+export const fotosProducto = pgTable('fotos_producto', {
+  productoId: uuid('producto_id')
+    .primaryKey()
+    .references(() => productos.id),
+  imagen: bytes('imagen').notNull(),
+  tipo: text('tipo').notNull(),
+  /** Cambia con cada foto nueva: va en la dirección, así el navegador la guarda para siempre. */
+  version: uuid('version').notNull().defaultRandom(),
+  subidaEn: momento('subida_en').notNull().defaultNow(),
+});
+
+// Igual que las de productos, para reconocer el insumo en la lista de stock.
+export const fotosInsumo = pgTable('fotos_insumo', {
+  insumoId: uuid('insumo_id')
+    .primaryKey()
+    .references(() => insumos.id),
+  imagen: bytes('imagen').notNull(),
+  tipo: text('tipo').notNull(),
+  version: uuid('version').notNull().defaultRandom(),
+  subidaEn: momento('subida_en').notNull().defaultNow(),
+});
+
+export const duenoAdjunto = pgEnum('dueno_adjunto', ['compra', 'pago_proveedor']);
+
+// La foto o el PDF de una factura o del comprobante de un pago: uno por dueño.
+// Las fotos llegan achicadas del navegador; un PDF, tal cual (con tope).
+export const adjuntos = pgTable(
+  'adjuntos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    duenoTipo: duenoAdjunto('dueno_tipo').notNull(),
+    duenoId: uuid('dueno_id').notNull(),
+    tipo: text('tipo').notNull(),
+    contenido: bytes('contenido').notNull(),
+    subidoPorId: text('subido_por_id').references(() => usuarios.id, { onDelete: 'set null' }),
+    subidoEn: momento('subido_en').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('adjuntos_dueno_idx').on(t.duenoTipo, t.duenoId)],
+);

@@ -170,6 +170,7 @@ function abrirVivo() {
 export async function arrancarSync() {
   if (arrancado) return;
   arrancado = true;
+  if (!(await leerAjuste('dispositivo'))) await guardarAjuste('dispositivo', crypto.randomUUID());
   actualizar({ enLinea: navigator.onLine, ultimoContacto: await leerAjuste('contacto') });
   window.addEventListener('online', () => {
     actualizar({ enLinea: true });
@@ -197,7 +198,7 @@ export async function registrarEvento<T extends EventoNuevo['tipo']>(
   autorizacion?: { autorizadoPorId: string; motivoId: string; motivoTexto: string | null },
 ) {
   const dispositivoId = await leerAjuste('dispositivo');
-  if (!dispositivoId) throw new EventoNoPermitido('Este dispositivo no está registrado');
+  if (!dispositivoId) throw new EventoNoPermitido('El dispositivo todavía está arrancando. Probá de nuevo.');
   if (!puede(operador, definicion(tipo).accion)) throw new EventoNoPermitido('No tenés permiso para esto');
 
   const evento = esquemaEvento.parse({

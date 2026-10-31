@@ -61,7 +61,7 @@ beforeAll(async () => {
   const [precio] = await db.insert(preciosProducto).values({ productoId: p!.id, precioCentavos: 1_500_000 }).returning();
   producto = { id: p!.id, precioId: precio!.id, estacionId: estacion!.id };
 
-  const [motivo] = await db.select().from(motivosAutorizacion).where(and(eq(motivosAutorizacion.accion, 'anular_item'), isNull(motivosAutorizacion.archivadoEn))).limit(1);
+  const [motivo] = await db.select().from(motivosAutorizacion).where(and(eq(motivosAutorizacion.accion, 'modificar_tras_precuenta'), isNull(motivosAutorizacion.archivadoEn))).limit(1);
   motivoAnulacion = motivo!.id;
 });
 
@@ -81,6 +81,7 @@ describe('autorizaciones en el servidor', () => {
     expect(recepciones.map((r) => r.resultado)).toEqual(['aceptado', 'aceptado', 'aceptado', 'aceptado']);
   });
 
+  // La cuenta ya tiene precuenta: anular ahí pide autorización (antes de la precuenta, no).
   it('rechaza una anulación sin autorización y una autorizada por un mozo', async () => {
     const [sinAutorizar, autorizadaPorMozo] = await recibirEventos(
       mozo,

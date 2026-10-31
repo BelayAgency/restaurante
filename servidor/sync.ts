@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray } from 'drizzle-orm';
 import { db } from '@/db/cliente';
 import { dispositivos, elementosPlano, eventos, mediosPago, modificadores, motivosAutorizacion, preciosProducto, productos, reglasAutorizacion, usuarios } from '@/db/esquema';
 import { ACCIONES_AUTORIZABLES, autorizacionRequerida, esAccionAutorizable, puedeAutorizar, type AccionAutorizable, type ReglasAutorizacion } from '@/dominio/autorizaciones';
@@ -18,10 +18,39 @@ export type Recepcion =
   | { id: string; resultado: 'aceptado'; secuencia: number }
   | { id: string; resultado: 'rechazado'; secuencia: number; motivo: string };
 
-async function dispositivoVigente(id: string) {
-  const fila = await db.query.dispositivos.findFirst({ where: and(eq(dispositivos.id, id), isNull(dispositivos.revocadoEn)) });
-  if (!fila) throw new ErrorAcceso(403, 'Este dispositivo no está registrado o fue dado de baja');
-  return fila;
+function nombreDispositivo(actor: UsuarioSesion, agente: string | null): string {
+  const sistema = !agente
+    ? 'Navegador'
+    : /iPhone|iPad/.test(agente)
+      ? 'iPhone o iPad'
+      : /Android/.test(agente)
+        ? 'Android'
+        : /Windows/.test(agente)
+          ? 'Windows'
+          : /Mac OS/.test(agente)
+            ? 'Mac'
+            : 'Navegador';
+  return `${sistema} de ${actor.nombre}`.slice(0, 80);
+}
+
+/**
+ * Cada navegador se registra solo la primera vez que sincroniza con una
+ * sesión válida: el id lo genera el propio dispositivo al arrancar. Queda en
+ * la auditoría quién lo usó primero.
+ */
+async function dispositivoDeSesion(actor: UsuarioSesion, id: string, agente: string | null) {
+  const existente = await db.query.dispositivos.findFirst({ where: eq(dispositivos.id, id) });
+  if (existente) {
+    if (existente.revocadoEn) throw new ErrorAcceso(403, 'Este dispositivo fue dado de baja');
+    return existente;
+  }
+  const [nuevo] = await db
+    .insert(dispositivos)
+    .values({ id, nombre: nombreDispositivo(actor, agente), registradoPorId: actor.id })
+    .onConflictDoNothing()
+    .returning();
+  if (nuevo) await auditar({ accion: 'dispositivo.registrado', actor, objetivoTipo: 'dispositivo', objetivoId: id, detalle: { nombre: nuevo.nombre }, ip: null });
+  return nuevo ?? (await db.query.dispositivos.findFirst({ where: eq(dispositivos.id, id) }))!;
 }
 
 interface Referencias {
@@ -199,8 +228,14 @@ function motivoDeTurno(evento: EventoNuevo, turnos: Map<string, { cerrado: boole
  * estaba devuelve lo que se resolvió la primera vez, así el dispositivo puede
  * reenviar sin miedo después de un corte a mitad de la respuesta.
  */
-export async function recibirEventos(actor: UsuarioSesion, dispositivoId: string, lote: EventoNuevo[], horaDispositivo: string | null) {
-  await dispositivoVigente(dispositivoId);
+export async function recibirEventos(
+  actor: UsuarioSesion,
+  dispositivoId: string,
+  lote: EventoNuevo[],
+  horaDispositivo: string | null,
+  agente: string | null = null,
+) {
+  await dispositivoDeSesion(actor, dispositivoId, agente);
   if (lote.some((e) => e.dispositivoId !== dispositivoId)) throw new ErrorDominio('El lote mezcla eventos de otro dispositivo');
   const [referencias, turnos, dia, historia] = await Promise.all([referenciasDe(lote), estadoTurnos(), diaAbierto(), historiaDeCuentas(lote)]);
 
@@ -271,8 +306,8 @@ export async function recibirEventos(actor: UsuarioSesion, dispositivoId: string
 
 export const LIMITE_PULL = 500;
 
-export async function eventosDesde(dispositivoId: string, desde: number): Promise<{ eventos: EventoConfirmado[]; hayMas: boolean }> {
-  await dispositivoVigente(dispositivoId);
+export async function eventosDesde(actor: UsuarioSesion, dispositivoId: string, desde: number, agente: string | null): Promise<{ eventos: EventoConfirmado[]; hayMas: boolean }> {
+  await dispositivoDeSesion(actor, dispositivoId, agente);
   const filas = await db
     .select()
     .from(eventos)
@@ -303,30 +338,8 @@ export async function eventosDesde(dispositivoId: string, desde: number): Promis
   };
 }
 
-/** Lo que un dispositivo necesita para trabajar sin red. Sólo para dispositivos registrados: lleva los PIN. */
-export async function catalogoDeDispositivo(dispositivoId: string): Promise<Catalogo> {
-  await dispositivoVigente(dispositivoId);
+/** Lo que un dispositivo necesita para trabajar sin red. Lleva los PIN: sólo con sesión. */
+export async function catalogoDeDispositivo(actor: UsuarioSesion, dispositivoId: string, agente: string | null): Promise<Catalogo> {
+  await dispositivoDeSesion(actor, dispositivoId, agente);
   return leerCatalogo();
-}
-
-export async function registrarDispositivo(actor: UsuarioSesion, id: string, nombre: string, ip: string | null) {
-  if (!puede(actor, 'dispositivos.registrar')) throw new ErrorAcceso(403, 'No tenés permiso para registrar dispositivos');
-  const existente = await db.query.dispositivos.findFirst({ where: eq(dispositivos.id, id) });
-  if (existente) {
-    if (existente.revocadoEn) throw new ErrorDominio('Este dispositivo fue dado de baja');
-    return;
-  }
-  await db.insert(dispositivos).values({ id, nombre, registradoPorId: actor.id });
-  await auditar({ accion: 'dispositivo.registrado', actor, objetivoTipo: 'dispositivo', objetivoId: id, detalle: { nombre }, ip });
-}
-
-export async function listarDispositivos(actor: UsuarioSesion) {
-  if (!puede(actor, 'dispositivos.administrar')) throw new ErrorAcceso(403, 'No tenés permiso');
-  return db.select().from(dispositivos).orderBy(asc(dispositivos.nombre));
-}
-
-export async function revocarDispositivo(actor: UsuarioSesion, id: string, ip: string | null) {
-  if (!puede(actor, 'dispositivos.administrar')) throw new ErrorAcceso(403, 'No tenés permiso');
-  await db.update(dispositivos).set({ revocadoEn: new Date() }).where(and(eq(dispositivos.id, id), isNull(dispositivos.revocadoEn)));
-  await auditar({ accion: 'dispositivo.revocado', actor, objetivoTipo: 'dispositivo', objetivoId: id, ip });
 }

@@ -58,6 +58,7 @@ export function Tabs({
   etiqueta,
   className,
   ancho,
+  parejas,
 }: {
   opciones: OpcionTab[];
   valor: string;
@@ -67,6 +68,11 @@ export function Tabs({
   className?: string;
   /** Reparte el ancho en partes iguales, en vez de ajustarse al texto. */
   ancho?: boolean;
+  /**
+   * Todas del ancho de la más larga, sin ocupar toda la fila: así el fondo
+   * activo no se estira y se encoge al pasar entre etiquetas muy distintas.
+   */
+  parejas?: boolean;
 }) {
   const id = useId();
   const barra = useRef<HTMLDivElement>(null);
@@ -125,8 +131,10 @@ export function Tabs({
       aria-label={etiqueta}
       onKeyDown={alTeclear}
       className={cn(
-        'relative inline-flex items-center gap-0.5 rounded-xl bg-lienzo p-1',
+        // El anillo hace visible la barra también sobre el fondo de la página, que es del mismo `lienzo`.
+        'relative inline-flex items-center gap-0.5 rounded-xl bg-lienzo p-1 ring-1 ring-inset ring-borde',
         ancho && 'flex w-full',
+        parejas && 'inline-grid auto-cols-fr grid-flow-col',
         className,
       )}
     >

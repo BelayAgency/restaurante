@@ -37,7 +37,9 @@ export function NavegadorPeriodo({ periodo, ruta }: { periodo: Periodo; ruta: st
   const enlace = (valor: string) => `${ruta}?tipo=${periodo.tipo}&valor=${valor}`;
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    // Fondo propio, como la barra de pestañas: el selector es `bg-lienzo` y
+    // sobre el fondo de la página, del mismo tono, no se distinguía.
+    <div className="flex shrink-0 items-center gap-1 rounded-xl bg-superficie p-1 ring-1 ring-inset ring-borde">
       <Link href={enlace(anterior)} className={flecha} aria-label="Ir al período anterior">
         <ChevronLeft size={16} strokeWidth={1.5} />
       </Link>

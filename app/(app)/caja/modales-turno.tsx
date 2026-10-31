@@ -12,7 +12,8 @@ import type { MedioPago } from '@/dominio/catalogo';
 import { centavosDesdeTexto } from '@/lib/formato';
 import { useRegistrar, type Operador } from '../salon/contexto';
 
-export function ModalAbrirCaja({ operador, alCerrar }: { operador: Operador; alCerrar: () => void }) {
+/** Abrir el turno con su fondo: desde la caja y desde el salón, que no se opera sin caja abierta. */
+export function useAbrirCaja(operador: Operador, alAbrir?: () => void) {
   const registrar = useRegistrar(operador);
   const toast = useToast();
   const [fondo, setFondo] = useState('');
@@ -24,26 +25,12 @@ export function ModalAbrirCaja({ operador, alCerrar }: { operador: Operador; alC
     iniciar(async () => {
       if (await registrar('turno_abierto', crypto.randomUUID(), { fondoCentavos })) {
         toast.exito('Caja abierta');
-        alCerrar();
+        alAbrir?.();
       }
     });
   }
 
-  return (
-    <Modal abierto alCerrar={alCerrar} titulo="Abrir caja" descripcion={`Queda a nombre de ${operador.nombre}.`}>
-      <div className="modal-cuerpo">
-        <CampoNumero etiqueta="Fondo inicial en efectivo" valor={fondo} alCambiar={setFondo} decimales={2} prefijo="$" placeholder="0" />
-      </div>
-      <footer className="modal-pie">
-        <Boton variante="secundario" onClick={alCerrar} disabled={guardando}>
-          Cancelar
-        </Boton>
-        <Boton variante="primario" onClick={abrir} cargando={guardando}>
-          Abrir caja
-        </Boton>
-      </footer>
-    </Modal>
-  );
+  return { fondo, setFondo, abrir, guardando };
 }
 
 export function ModalSalida({ turnoId, operador, alCerrar }: { turnoId: string; operador: Operador; alCerrar: () => void }) {

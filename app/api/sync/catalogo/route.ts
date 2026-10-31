@@ -7,10 +7,10 @@ export async function GET(pedido: Request) {
   // Sin esto el build intenta prerenderizarla y choca con la sesión.
   await connection();
   try {
-    await exigirSesion();
+    const actor = await exigirSesion();
     const dispositivoId = z.uuid().safeParse(new URL(pedido.url).searchParams.get('dispositivo'));
     if (!dispositivoId.success) return Response.json({ error: 'Pedido inválido' }, { status: 422 });
-    return Response.json(await catalogoDeDispositivo(dispositivoId.data), { headers: { 'cache-control': 'no-store' } });
+    return Response.json(await catalogoDeDispositivo(actor, dispositivoId.data, pedido.headers.get('user-agent')), { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return respuestaDeError(error);
   }

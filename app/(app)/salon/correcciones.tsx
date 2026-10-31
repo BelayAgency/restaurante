@@ -1,123 +1,87 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Ban, Gift, Tag } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import { Boton } from '@/components/boton';
-import { CampoNumero } from '@/components/campo-numero';
 import { Modal } from '@/components/modal';
-import { Tabs } from '@/components/tabs';
 import { useToast } from '@/components/toast';
-import { totalCuenta, type Cuenta, type Item } from '@/dominio/reductores/salon';
-import { centavosDesdeTexto, numeroDesdeTexto, pesosDesdeCentavos, textoDesdeCentavos } from '@/lib/formato';
+import type { Item } from '@/dominio/reductores/salon';
 import { useRegistrar, type Operador } from './contexto';
 
 /**
- * Lo que se le puede hacer a un ítem ya enviado. Nada lo borra: queda en la
- * cuenta, tachado o en cero, con quién lo hizo, quién lo autorizó y por qué.
+ * Anular o regalar un ítem ya enviado. Con más de una unidad se elige cuántas;
+ * regalar además se confirma. Nada se borra: esas unidades quedan como su
+ * propia línea al lado, tachada o en cero, con quién lo hizo.
  */
-export function ModalCorregirItem({ cuentaId, item, operador, alCerrar }: { cuentaId: string; item: Item; operador: Operador; alCerrar: () => void }) {
+export function ModalCorregirItem({
+  cuentaId,
+  item,
+  modo,
+  operador,
+  alCerrar,
+}: {
+  cuentaId: string;
+  item: Item;
+  modo: 'anular' | 'cortesia';
+  operador: Operador;
+  alCerrar: () => void;
+}) {
   const registrar = useRegistrar(operador);
   const toast = useToast();
-  const [cambiandoPrecio, setCambiandoPrecio] = useState(false);
-  const [precio, setPrecio] = useState(textoDesdeCentavos(item.precioCentavos));
+  const [cantidad, setCantidad] = useState(item.cantidad > 1 && modo === 'anular' ? 1 : item.cantidad);
   const [ocupado, iniciar] = useTransition();
+  const regalar = modo === 'cortesia';
+  const todos = cantidad === item.cantidad;
 
-  function hacer(accion: () => Promise<boolean>, exito: string) {
+  function confirmar() {
     iniciar(async () => {
-      if (await accion()) {
-        toast.exito(exito);
-        alCerrar();
-      }
+      // Sin cantidad, el evento toma el ítem entero.
+      const datos = { itemId: item.id, ...(todos ? {} : { cantidad }) };
+      const ok = await registrar(regalar ? 'item_cortesia' : 'item_anulado', cuentaId, datos);
+      if (!ok) return;
+      toast.exito(regalar ? 'Cortesía registrada' : todos ? 'Ítem anulado' : 'Cantidad anulada');
+      alCerrar();
     });
   }
 
   return (
-    <Modal abierto alCerrar={alCerrar} titulo={`${item.cantidad} × ${item.nombre}`} descripcion="Cualquiera de estas acciones pide la autorización de un encargado.">
+    <Modal abierto alCerrar={alCerrar} titulo={regalar ? `¿Regalar ${item.nombre}?` : `Anular · ${item.nombre}`}>
       <div className="modal-cuerpo flex flex-col gap-3">
-        {cambiandoPrecio ? (
-          <CampoNumero etiqueta="Precio unitario" valor={precio} alCambiar={setPrecio} decimales={2} prefijo="$" placeholder="0" />
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Boton variante="secundario" onClick={() => hacer(() => registrar('item_anulado', cuentaId, { itemId: item.id }), 'Ítem anulado')} disabled={ocupado}>
-              <Ban size={15} strokeWidth={1.5} /> Anular
-            </Boton>
-            <Boton variante="secundario" onClick={() => hacer(() => registrar('item_cortesia', cuentaId, { itemId: item.id }), 'Cortesía registrada')} disabled={ocupado || item.cortesia}>
-              <Gift size={15} strokeWidth={1.5} /> Cortesía
-            </Boton>
-            <Boton variante="secundario" onClick={() => setCambiandoPrecio(true)} disabled={ocupado}>
-              <Tag size={15} strokeWidth={1.5} /> Precio
-            </Boton>
+        {item.cantidad > 1 ? (
+          <div>
+            <p className="etiqueta-campo">
+              ¿Cuántos se {regalar ? 'regalan' : 'anulan'}? Hay {item.cantidad}.
+            </p>
+            <div className="flex items-center gap-3">
+              <Boton variante="secundario" tamano="lg" soloIcono aria-label="Uno menos" onClick={() => setCantidad(Math.max(1, cantidad - 1))} disabled={cantidad <= 1}>
+                <Minus size={18} strokeWidth={1.5} />
+              </Boton>
+              <span className="w-10 text-center text-2xl font-semibold tabular-nums text-tinta" aria-live="polite">
+                {cantidad}
+              </span>
+              <Boton variante="secundario" tamano="lg" soloIcono aria-label="Uno más" onClick={() => setCantidad(Math.min(item.cantidad, cantidad + 1))} disabled={todos}>
+                <Plus size={18} strokeWidth={1.5} />
+              </Boton>
+              <Boton variante="fantasma" tamano="sm" onClick={() => setCantidad(item.cantidad)} disabled={todos}>
+                Todos
+              </Boton>
+            </div>
           </div>
-        )}
-      </div>
-      <footer className="modal-pie">
-        <Boton variante="secundario" onClick={alCerrar} disabled={ocupado}>
-          Cancelar
-        </Boton>
-        {cambiandoPrecio ? (
-          <Boton
-            variante="primario"
-            cargando={ocupado}
-            onClick={() => {
-              const precioCentavos = centavosDesdeTexto(precio || '0');
-              if (precioCentavos === null) return;
-              hacer(() => registrar('precio_modificado', cuentaId, { itemId: item.id, precioCentavos }), 'Precio cambiado');
-            }}
-          >
-            Cambiar precio
-          </Boton>
         ) : null}
-      </footer>
-    </Modal>
-  );
-}
-
-export function ModalDescuento({ cuenta, operador, alCerrar }: { cuenta: Cuenta; operador: Operador; alCerrar: () => void }) {
-  const registrar = useRegistrar(operador);
-  const toast = useToast();
-  const [modo, setModo] = useState<'porcentaje' | 'monto'>('porcentaje');
-  const [valor, setValor] = useState('');
-  const [ocupado, iniciar] = useTransition();
-  const total = totalCuenta(cuenta);
-  const porcentaje = modo === 'porcentaje' ? Math.min(100, numeroDesdeTexto(valor || '0') ?? 0) : null;
-  const montoCentavos = modo === 'porcentaje' ? Math.round((total * (porcentaje ?? 0)) / 100) : Math.min(total, centavosDesdeTexto(valor || '0') ?? 0);
-
-  function aplicar() {
-    if (montoCentavos <= 0) return;
-    iniciar(async () => {
-      if (await registrar('descuento_aplicado', cuenta.id, { descuentoId: crypto.randomUUID(), porcentaje, montoCentavos })) {
-        toast.exito('Descuento aplicado');
-        alCerrar();
-      }
-    });
-  }
-
-  return (
-    <Modal abierto alCerrar={alCerrar} titulo="Descuento" descripcion={`Sobre ${pesosDesdeCentavos(total)}. Pide la autorización de un encargado.`}>
-      <div className="modal-cuerpo flex flex-col gap-4">
-        <Tabs
-          etiqueta="Tipo de descuento"
-          valor={modo}
-          alCambiar={(v) => {
-            setModo(v as 'porcentaje' | 'monto');
-            setValor('');
-          }}
-          opciones={[
-            { valor: 'porcentaje', etiqueta: 'Porcentaje' },
-            { valor: 'monto', etiqueta: 'Monto fijo' },
-          ]}
-        />
-        <CampoNumero etiqueta={modo === 'porcentaje' ? 'Porcentaje' : 'Monto'} valor={valor} alCambiar={setValor} decimales={modo === 'porcentaje' ? 1 : 2} prefijo={modo === 'porcentaje' ? '%' : '$'} placeholder="0" />
-        <p className="text-sm text-tinta-suave">
-          Se descuentan <strong className="tabular-nums text-tinta">{pesosDesdeCentavos(montoCentavos)}</strong>
+        <p className="text-sm text-tinta-tenue">
+          {regalar
+            ? `${cantidad} × ${item.nombre} ${cantidad === 1 ? 'queda' : 'quedan'} en la cuenta en $ 0, como cortesía a tu nombre.`
+            : todos
+              ? 'Se anula el plato entero; queda tachado en la cuenta.'
+              : `Quedan ${item.cantidad - cantidad}; lo anulado queda tachado en la cuenta.`}
         </p>
       </div>
       <footer className="modal-pie">
         <Boton variante="secundario" onClick={alCerrar} disabled={ocupado}>
           Cancelar
         </Boton>
-        <Boton variante="primario" onClick={aplicar} cargando={ocupado} disabled={montoCentavos <= 0}>
-          Aplicar
+        <Boton variante={regalar ? 'primario' : 'peligro'} cargando={ocupado} onClick={confirmar}>
+          {regalar ? `Sí, regalar ${cantidad}` : `Anular ${cantidad}`}
         </Boton>
       </footer>
     </Modal>

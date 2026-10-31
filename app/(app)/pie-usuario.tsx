@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { CreditCard, LogOut, Settings, UserRound } from 'lucide-react';
+import { CreditCard, LogOut, Settings, UserRound, Users, UsersRound } from 'lucide-react';
 import { ModalConfiguracion, type SeccionConfiguracion } from '@/components/configuracion';
 import { MenuUsuario } from '@/components/menu-usuario';
 import { Selector } from '@/components/selector';
@@ -11,8 +11,10 @@ import { useToast } from '@/components/toast';
 import { puede } from '@/dominio/permisos';
 import { NOMBRE_ROL, ROLES } from '@/dominio/roles';
 import { accionCambiarVista } from './acciones';
+import { ModalCambiarOperador } from './cambiar-operador';
 import { SeccionFacturacion } from './configuracion/seccion-facturacion';
 import { SeccionGeneral } from './configuracion/seccion-general';
+import { SeccionUsuarios } from './configuracion/seccion-usuarios';
 import { useSesion } from './sesion-cliente';
 
 const OPCIONES_VISTA = ROLES.map((r) => ({ valor: r, etiqueta: `Vista: ${NOMBRE_ROL[r]}` }));
@@ -48,10 +50,14 @@ export function PieUsuario() {
   const router = useRouter();
   const { usuario } = useSesion();
   const [configuracion, setConfiguracion] = useState(false);
+  const [cambiandoOperador, setCambiandoOperador] = useState(false);
 
   const secciones: SeccionConfiguracion[] = [
     { id: 'general', titulo: 'General', icono: <UserRound size={17} strokeWidth={1.5} />, contenido: <SeccionGeneral /> },
   ];
+  if (puede(usuario, 'usuarios.ver')) {
+    secciones.push({ id: 'usuarios', titulo: 'Usuarios', icono: <Users size={17} strokeWidth={1.5} />, contenido: <SeccionUsuarios /> });
+  }
   // La relación con Belay es del dueño, no de cada mozo.
   if (puede(usuario, 'control.ver')) {
     secciones.push({ id: 'facturacion', titulo: 'Facturación', icono: <CreditCard size={17} strokeWidth={1.5} />, contenido: <SeccionFacturacion /> });
@@ -67,10 +73,12 @@ export function PieUsuario() {
         foto={usuario.foto}
         acciones={[
           { texto: 'Configuración', icono: <Settings size={16} strokeWidth={1.5} />, alElegir: () => setConfiguracion(true) },
+          { texto: 'Cambiar de operador', icono: <UsersRound size={16} strokeWidth={1.5} />, alElegir: () => setCambiandoOperador(true) },
           { texto: 'Cerrar sesión', icono: <LogOut size={16} strokeWidth={1.5} />, alElegir: () => void salir(router) },
         ]}
       />
       <ModalConfiguracion abierto={configuracion} alCerrar={() => setConfiguracion(false)} secciones={secciones} />
+      {cambiandoOperador ? <ModalCambiarOperador abierto alCerrar={() => setCambiandoOperador(false)} /> : null}
     </div>
   );
 }

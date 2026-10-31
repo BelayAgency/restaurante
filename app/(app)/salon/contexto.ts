@@ -4,10 +4,11 @@ import { useToast } from '@/components/toast';
 import { autorizacionRequerida } from '@/dominio/autorizaciones';
 import type { Catalogo, OperadorCatalogo } from '@/dominio/catalogo';
 import type { DatosDe, EventoNuevo, TipoEvento } from '@/dominio/eventos';
-import { reducirSalon } from '@/dominio/reductores/salon';
+import { reducirSalon, type Cuenta } from '@/dominio/reductores/salon';
 import { baseLocal } from '@/local/base';
 import { EventoNoPermitido, registrarEvento } from '@/local/sync';
 import { usePedirAutorizacion } from '../autorizacion';
+import { useSesion } from '../sesion-cliente';
 
 export interface Operador {
   id: string;
@@ -51,6 +52,22 @@ export function nombreMesa(catalogo: Catalogo, mesaId: string | null): string {
   return mesa?.numeroMesa ? `Mesa ${mesa.numeroMesa}` : 'Mesa';
 }
 
+/** Cómo se nombra una cuenta: su mesa, o el nombre del pedido sin mesa. */
+export function nombreCuenta(catalogo: Catalogo, cuenta: Pick<Cuenta, 'tipo' | 'mesaId' | 'nombre'>): string {
+  if (cuenta.tipo === 'mesa') return nombreMesa(catalogo, cuenta.mesaId);
+  return cuenta.nombre ?? (cuenta.tipo === 'llevar' ? 'Para llevar' : 'Mostrador');
+}
+
 export function nombreOperador(catalogo: Catalogo, id: string): string {
   return catalogo.operadores.find((o) => o.id === id)?.nombre ?? '—';
+}
+
+/**
+ * Como `nombreOperador`, pero reconoce a quien tiene la sesión aunque no esté
+ * entre los operadores del catálogo (soporte no figura ahí): lo que hizo uno
+ * mismo no aparece como «—».
+ */
+export function useNombreOperador(catalogo: Catalogo) {
+  const { usuario } = useSesion();
+  return (id: string) => (id === usuario.id ? usuario.nombre : nombreOperador(catalogo, id));
 }

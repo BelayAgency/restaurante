@@ -6,6 +6,7 @@ import {
   conteos,
   depositos,
   eventos,
+  fotosInsumo,
   historialCostos,
   insumos,
   lineasCompra,
@@ -20,11 +21,12 @@ import {
 } from '@/db/esquema';
 import type { DatosDe, EventoNuevo } from '@/dominio/eventos';
 import { puede, type Accion } from '@/dominio/permisos';
-import { consumoDeReceta, costoPorcion, costoPromedio, foodCostPorcentaje, type UnidadBase } from '@/dominio/stock';
+import { consumoDeReceta, costoPorcion, costoPromedio, factorDeConversion, foodCostPorcentaje, type UnidadBase } from '@/dominio/stock';
 import { ErrorAcceso, ErrorDominio, type UsuarioSesion } from '@/lib/sesion';
 import { auditar } from './auditoria';
+import { validarFoto } from './fotos';
 
-type Transaccion = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Transaccion = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type TipoMovimiento = (typeof movimientosStock.$inferInsert)['tipo'];
 
 function exigir(actor: UsuarioSesion, accion: Accion = 'stock.administrar') {
@@ -72,7 +74,7 @@ async function actualizarCosto(tx: Transaccion, insumoId: string, costoUnitario:
 
 export async function leerStock(actor: UsuarioSesion) {
   exigir(actor, 'stock.contar');
-  const [filasInsumos, filasDepositos, filasPresentaciones, totales, filasProveedores] = await Promise.all([
+  const [filasInsumos, filasDepositos, filasPresentaciones, totales, filasProveedores, filasFotos] = await Promise.all([
     db.select().from(insumos).where(isNull(insumos.archivadoEn)).orderBy(asc(insumos.nombre)),
     db.select().from(depositos).where(isNull(depositos.archivadoEn)).orderBy(asc(depositos.nombre)),
     db.select().from(presentaciones).where(isNull(presentaciones.archivadoEn)),
@@ -85,7 +87,9 @@ export async function leerStock(actor: UsuarioSesion) {
       .from(movimientosStock)
       .groupBy(movimientosStock.insumoId, movimientosStock.depositoId),
     db.select().from(proveedores).where(isNull(proveedores.archivadoEn)).orderBy(asc(proveedores.nombre)),
+    db.select({ insumoId: fotosInsumo.insumoId, version: fotosInsumo.version }).from(fotosInsumo),
   ]);
+  const fotoDe = new Map(filasFotos.map((f) => [f.insumoId, f.version]));
 
   return {
     depositos: filasDepositos.map((d) => ({ id: d.id, nombre: d.nombre, deVenta: d.deVenta })),
@@ -97,7 +101,9 @@ export async function leerStock(actor: UsuarioSesion) {
         id: i.id,
         nombre: i.nombre,
         tipo: i.tipo,
+        fotoVersion: fotoDe.get(i.id) ?? null,
         unidad: i.unidad as UnidadBase,
+        contenidoPorUnidad: i.contenidoPorUnidad,
         stockMinimo: i.stockMinimo,
         costoUnitario: i.costoUnitario,
         porDeposito,
@@ -116,6 +122,7 @@ export interface DatosInsumo {
   nombre: string;
   tipo: 'compra' | 'preparacion';
   unidad: UnidadBase;
+  contenidoPorUnidad: number | null;
   stockMinimo: number;
   presentaciones: { id: string | null; nombre: string; cantidadBase: number }[];
 }
@@ -124,23 +131,44 @@ export async function guardarInsumo(actor: UsuarioSesion, datos: DatosInsumo, ip
   exigir(actor);
   const id = await db.transaction(async (tx) => {
     let id = datos.id;
+    // Medido por unidad, cada una es 1; una preparación rinde lo que diga su receta.
+    const contenidoPorUnidad = datos.unidad === 'u' || datos.tipo === 'preparacion' ? null : datos.contenidoPorUnidad;
+    let pedidas = datos.presentaciones;
     if (id) {
-      // La unidad no se cambia: los movimientos viejos están en la anterior.
-      await tx.update(insumos).set({ nombre: datos.nombre, stockMinimo: datos.stockMinimo }).where(eq(insumos.id, id));
+      const [actual] = await tx.select().from(insumos).where(eq(insumos.id, id));
+      if (!actual) throw new ErrorDominio('El insumo no existe');
+      let stockMinimo = datos.stockMinimo;
+      if (actual.unidad !== datos.unidad) {
+        const factor = factorDeConversion({ unidad: actual.unidad, contenidoPorUnidad: actual.contenidoPorUnidad }, { unidad: datos.unidad, contenidoPorUnidad });
+        // Sin factor (ml a g de algo sin composición) sólo cambia la medida, y el resto se corrige a mano.
+        if (factor) {
+          await convertirMedida(tx, actor, { id, unidad: actual.unidad, costoUnitario: actual.costoUnitario }, datos.unidad, factor);
+          stockMinimo = actual.stockMinimo * factor;
+          const vigentes = await tx.select().from(presentaciones).where(and(eq(presentaciones.insumoId, id), isNull(presentaciones.archivadoEn)));
+          pedidas = vigentes.map((p) => ({ id: p.id, nombre: p.nombre, cantidadBase: p.cantidadBase * factor }));
+        }
+      }
+      await tx
+        .update(insumos)
+        .set({ nombre: datos.nombre, unidad: datos.unidad, stockMinimo, contenidoPorUnidad: actual.tipo === 'preparacion' ? null : contenidoPorUnidad })
+        .where(eq(insumos.id, id));
     } else {
-      const [fila] = await tx.insert(insumos).values({ nombre: datos.nombre, tipo: datos.tipo, unidad: datos.unidad, stockMinimo: datos.stockMinimo }).returning({ id: insumos.id });
+      const [fila] = await tx
+        .insert(insumos)
+        .values({ nombre: datos.nombre, tipo: datos.tipo, unidad: datos.unidad, stockMinimo: datos.stockMinimo, contenidoPorUnidad })
+        .returning({ id: insumos.id });
       id = fila!.id;
     }
     const actuales = await tx.select().from(presentaciones).where(and(eq(presentaciones.insumoId, id), isNull(presentaciones.archivadoEn)));
     for (const actual of actuales) {
-      const pedida = datos.presentaciones.find((p) => p.id === actual.id);
+      const pedida = pedidas.find((p) => p.id === actual.id);
       if (!pedida || pedida.cantidadBase !== actual.cantidadBase) {
         await tx.update(presentaciones).set({ archivadoEn: new Date() }).where(eq(presentaciones.id, actual.id));
       } else if (pedida.nombre !== actual.nombre) {
         await tx.update(presentaciones).set({ nombre: pedida.nombre }).where(eq(presentaciones.id, actual.id));
       }
     }
-    const nuevas = datos.presentaciones.filter((p) => {
+    const nuevas = pedidas.filter((p) => {
       const actual = actuales.find((a) => a.id === p.id);
       return !actual || actual.cantidadBase !== p.cantidadBase;
     });
@@ -149,6 +177,54 @@ export async function guardarInsumo(actor: UsuarioSesion, datos: DatosInsumo, ip
   });
   await registrar(actor, datos.id ? 'insumo.editado' : 'insumo.creado', id, { nombre: datos.nombre }, ip);
   return id;
+}
+
+/**
+ * Pasa a otra medida lo que ya está escrito en la vieja: el saldo de cada
+ * depósito (con un movimiento propio, los anteriores no se tocan), el costo y
+ * las recetas vigentes, que se guardan como versión nueva.
+ */
+async function convertirMedida(tx: Transaccion, actor: UsuarioSesion, insumo: { id: string; unidad: string; costoUnitario: number }, unidadNueva: UnidadBase, factor: number) {
+  const referencia = crypto.randomUUID();
+  const costoUnitario = insumo.costoUnitario / factor;
+  const saldos = await tx
+    .select({ depositoId: movimientosStock.depositoId, cantidad: sql<string>`sum(${movimientosStock.cantidad})` })
+    .from(movimientosStock)
+    .where(eq(movimientosStock.insumoId, insumo.id))
+    .groupBy(movimientosStock.depositoId);
+  for (const saldo of saldos) {
+    const cantidad = Number(saldo.cantidad) * (factor - 1);
+    if (!cantidad) continue;
+    await moverStock(tx, {
+      insumoId: insumo.id,
+      depositoId: saldo.depositoId,
+      tipo: 'cambio_medida',
+      cantidad,
+      costoUnitario,
+      actorId: actor.id,
+      motivo: `De ${insumo.unidad} a ${unidadNueva}`,
+      referenciaTipo: 'cambio_medida',
+      referenciaId: referencia,
+    });
+  }
+  if (insumo.costoUnitario) await actualizarCosto(tx, insumo.id, costoUnitario, 'cambio_medida', referencia);
+
+  const afectadas = await tx
+    .selectDistinct({ id: recetas.id, productoId: recetas.productoId, preparacionId: recetas.preparacionId, rendimiento: recetas.rendimiento })
+    .from(recetas)
+    .innerJoin(lineasReceta, eq(lineasReceta.recetaId, recetas.id))
+    .where(and(eq(lineasReceta.insumoId, insumo.id), isNull(recetas.archivadoEn)));
+  for (const receta of afectadas) {
+    const lineas = await tx.select().from(lineasReceta).where(eq(lineasReceta.recetaId, receta.id));
+    await tx.update(recetas).set({ archivadoEn: new Date() }).where(eq(recetas.id, receta.id));
+    const [nueva] = await tx
+      .insert(recetas)
+      .values({ productoId: receta.productoId, preparacionId: receta.preparacionId, rendimiento: receta.rendimiento, creadoPorId: actor.id })
+      .returning({ id: recetas.id });
+    await tx.insert(lineasReceta).values(
+      lineas.map((l) => ({ recetaId: nueva!.id, insumoId: l.insumoId, cantidad: l.insumoId === insumo.id ? l.cantidad * factor : l.cantidad, mermaPorcentaje: l.mermaPorcentaje })),
+    );
+  }
 }
 
 export async function archivarInsumo(actor: UsuarioSesion, id: string, ip: string | null) {
@@ -162,6 +238,32 @@ export async function archivarInsumo(actor: UsuarioSesion, id: string, ip: strin
   if (enReceta.length) throw new ErrorDominio('El insumo está en una receta vigente: sacalo de la receta primero');
   await db.update(insumos).set({ archivadoEn: new Date() }).where(eq(insumos.id, id));
   await registrar(actor, 'insumo.archivado', id, {}, ip);
+}
+
+export async function guardarFotoInsumo(actor: UsuarioSesion, insumoId: string, imagen: Buffer, ip: string | null) {
+  exigir(actor);
+  const tipo = validarFoto(imagen);
+  const [insumo] = await db.select({ id: insumos.id }).from(insumos).where(and(eq(insumos.id, insumoId), isNull(insumos.archivadoEn)));
+  if (!insumo) throw new ErrorDominio('El insumo no existe');
+  const version = crypto.randomUUID();
+  await db
+    .insert(fotosInsumo)
+    .values({ insumoId, imagen, tipo, version })
+    .onConflictDoUpdate({ target: fotosInsumo.insumoId, set: { imagen, tipo, version, subidaEn: new Date() } });
+  await registrar(actor, 'insumo.foto_subida', insumoId, { bytes: imagen.length }, ip);
+  return version;
+}
+
+export async function quitarFotoInsumo(actor: UsuarioSesion, insumoId: string, ip: string | null) {
+  exigir(actor);
+  await db.delete(fotosInsumo).where(eq(fotosInsumo.insumoId, insumoId));
+  await registrar(actor, 'insumo.foto_quitada', insumoId, {}, ip);
+}
+
+/** Para servirla: cualquiera con sesión, como las de los platos. */
+export async function leerFotoInsumo(insumoId: string) {
+  const [foto] = await db.select({ imagen: fotosInsumo.imagen, tipo: fotosInsumo.tipo, version: fotosInsumo.version }).from(fotosInsumo).where(eq(fotosInsumo.insumoId, insumoId));
+  return foto ?? null;
 }
 
 export async function guardarProveedor(actor: UsuarioSesion, datos: { id: string | null; nombre: string; cuit: string | null }, ip: string | null) {
@@ -257,20 +359,41 @@ async function recetaVigente(tx: Transaccion | typeof db, filtro: { productoId?:
 
 export interface DatosCompra {
   proveedorId: string;
-  depositoId: string;
+  tipo?: 'factura' | 'nota_credito';
+  depositoId: string | null;
   numeroFactura: string;
   fecha: string;
+  /** El del papel. Sin él, la suma de las líneas. */
+  totalCentavos?: number;
+  observacion?: string | null;
   lineas: { insumoId: string; presentacionId: string | null; cantidadPresentaciones: number; costoCentavos: number }[];
 }
 
-/** La compra suma stock y recalcula el costo promedio de cada insumo. */
+/**
+ * Registra un comprobante del proveedor. Si trae insumos, la mercadería entra
+ * al depósito y se recalcula el costo promedio de cada uno; si no, sólo suma a
+ * la cuenta corriente (servicios, o una factura que se carga rápido).
+ */
 export async function registrarCompra(actor: UsuarioSesion, datos: DatosCompra, ip: string | null) {
   exigir(actor);
+  const tipo = datos.tipo ?? 'factura';
+  if (datos.lineas.length && !datos.depositoId) throw new ErrorDominio('Elegí a qué depósito entra la mercadería');
+  if (tipo === 'nota_credito' && datos.lineas.length) throw new ErrorDominio('Una nota de crédito no lleva insumos');
+  const totalCentavos = datos.totalCentavos ?? datos.lineas.reduce((s, l) => s + l.costoCentavos, 0);
+  if (totalCentavos <= 0) throw new ErrorDominio('Poné el importe total');
   const id = await db.transaction(async (tx) => {
-    const totalCentavos = datos.lineas.reduce((s, l) => s + l.costoCentavos, 0);
     const [compra] = await tx
       .insert(compras)
-      .values({ proveedorId: datos.proveedorId, depositoId: datos.depositoId, numeroFactura: datos.numeroFactura, fecha: datos.fecha, totalCentavos, registradaPorId: actor.id })
+      .values({
+        proveedorId: datos.proveedorId,
+        tipo,
+        depositoId: datos.lineas.length ? datos.depositoId : null,
+        numeroFactura: datos.numeroFactura,
+        fecha: datos.fecha,
+        totalCentavos,
+        observacion: datos.observacion || null,
+        registradaPorId: actor.id,
+      })
       .returning({ id: compras.id });
     for (const linea of datos.lineas) {
       const presentacion = linea.presentacionId ? await tx.query.presentaciones.findFirst({ where: eq(presentaciones.id, linea.presentacionId) }) : null;
@@ -284,7 +407,7 @@ export async function registrarCompra(actor: UsuarioSesion, datos: DatosCompra, 
       await tx.insert(lineasCompra).values({ compraId: compra!.id, ...linea, cantidadBase });
       await moverStock(tx, {
         insumoId: linea.insumoId,
-        depositoId: datos.depositoId,
+        depositoId: datos.depositoId!,
         tipo: 'compra',
         cantidad: cantidadBase,
         costoUnitario: costoNuevo,
@@ -300,22 +423,29 @@ export async function registrarCompra(actor: UsuarioSesion, datos: DatosCompra, 
   return id;
 }
 
-export async function listarCompras(actor: UsuarioSesion) {
-  exigir(actor);
-  return db
-    .select({
-      id: compras.id,
-      fecha: compras.fecha,
-      numeroFactura: compras.numeroFactura,
-      totalCentavos: compras.totalCentavos,
-      proveedor: proveedores.nombre,
-      deposito: depositos.nombre,
-    })
-    .from(compras)
-    .innerJoin(proveedores, eq(proveedores.id, compras.proveedorId))
-    .innerJoin(depositos, eq(depositos.id, compras.depositoId))
-    .orderBy(sql`${compras.fecha} desc, ${compras.registradaEn} desc`)
-    .limit(100);
+/**
+ * Al anular una compra con insumos, la mercadería que entró sale con un
+ * contra-movimiento que la referencia: el de entrada no se toca. El costo
+ * promedio no se recalcula hacia atrás; el siguiente ingreso lo corrige.
+ */
+export async function revertirStockDeCompra(tx: Transaccion, compraId: string, actorId: string) {
+  const entradas = await tx
+    .select()
+    .from(movimientosStock)
+    .where(and(eq(movimientosStock.referenciaTipo, 'compra'), sql`${movimientosStock.referenciaId} like ${`${compraId}:%`}`));
+  for (const entrada of entradas) {
+    await moverStock(tx, {
+      insumoId: entrada.insumoId,
+      depositoId: entrada.depositoId,
+      tipo: 'compra',
+      cantidad: -entrada.cantidad,
+      costoUnitario: entrada.costoUnitario,
+      actorId,
+      motivo: 'Compra anulada',
+      referenciaTipo: 'anulacion_compra',
+      referenciaId: entrada.referenciaId!,
+    });
+  }
 }
 
 /** Elaborar una preparación: salen sus insumos según la receta y entra la preparación. */

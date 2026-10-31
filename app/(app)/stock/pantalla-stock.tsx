@@ -1,24 +1,48 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowLeftRight, Factory, PackageMinus, Plus, Truck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ArrowLeftRight, Factory, Package, PackageMinus, Search, Truck } from 'lucide-react';
 import { Boton } from '@/components/boton';
+import { Miniatura } from '@/components/foto-producto';
+import { NivelStock } from '@/components/nivel-stock';
+import { urlFotoInsumo } from '@/dominio/catalogo';
 import { EstadoVacio, Insignia, Tabla, Tarjeta, Td, Th, TituloSeccion } from '@/components/ui';
 import { puede } from '@/dominio/permisos';
-import { formatearCantidad } from '@/dominio/stock';
-import { pesosDesdeCentavos } from '@/lib/formato';
+import { formatearCantidad, formatearConUnidades } from '@/dominio/stock';
+import type { Productos } from '@/servidor/productos';
 import type { Stock } from '@/servidor/stock';
 import { useSesion } from '../sesion-cliente';
-import { ModalInsumo } from './modal-insumo';
+import { ModalProducto } from './modal-producto';
 import { ModalMovimiento, type Movimiento } from './modales-movimiento';
 
-export function PantallaStock({ stock }: { stock: Stock }) {
+type Insumo = Stock['insumos'][number];
+
+export function PantallaStock({
+  stock,
+  productos,
+  filas,
+  buscando,
+  buscador,
+  paginacion,
+}: {
+  stock: Stock;
+  /** Para abrir la ficha de un producto: sólo quien administra. */
+  productos: Productos | null;
+  /** La página de la tabla, ya filtrada en el servidor. */
+  filas: Insumo[];
+  buscando: string;
+  buscador: ReactNode;
+  paginacion: ReactNode;
+}) {
   const { usuario } = useSesion();
   const administra = puede(usuario, 'stock.administrar');
-  // `undefined`: cerrado; `null`: uno nuevo.
-  const [insumo, setInsumo] = useState<Stock['insumos'][number] | null>();
+  const [abiertoId, setAbiertoId] = useState<string | null>(null);
+  const abierto = productos?.conStock.find((p) => p.id === abiertoId);
   const [movimiento, setMovimiento] = useState<Movimiento | null>(null);
   const bajos = stock.insumos.filter((i) => i.bajoMinimo).length;
+  const nivel = (i: Insumo) => (
+    <NivelStock cantidad={i.total} minimo={i.stockMinimo} texto={formatearConUnidades(i.total, i.unidad, i.contenidoPorUnidad)} textoMinimo={formatearCantidad(i.stockMinimo, i.unidad)} />
+  );
 
   return (
     <>
@@ -39,9 +63,6 @@ export function PantallaStock({ stock }: { stock: Stock }) {
               <Boton variante="secundario" tamano="sm" onClick={() => setMovimiento('proveedor')}>
                 <Truck size={14} strokeWidth={1.5} /> Proveedor
               </Boton>
-              <Boton variante="primario" tamano="sm" onClick={() => setInsumo(null)}>
-                <Plus size={14} strokeWidth={1.75} /> Insumo
-              </Boton>
             </div>
           ) : null
         }
@@ -49,67 +70,64 @@ export function PantallaStock({ stock }: { stock: Stock }) {
         Stock
       </TituloSeccion>
 
-      <Tarjeta>
-        {stock.insumos.length === 0 ? (
-          <EstadoVacio titulo="Todavía no hay insumos" detalle="Cargalos con su unidad y cómo se compran; después armá las recetas." />
-        ) : (
-          <div className="overflow-x-auto">
-            <Tabla>
-              <thead>
-                <tr>
-                  <Th>Insumo</Th>
-                  {stock.depositos.map((d) => (
-                    <Th key={d.id} className="text-right">
-                      {d.nombre}
-                    </Th>
-                  ))}
-                  <Th className="text-right">Total</Th>
-                  <Th className="text-right">Costo</Th>
-                  <Th className="text-right">Valor</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {stock.insumos.map((i) => (
-                  <tr key={i.id}>
-                    <Td>
-                      {administra ? (
-                        <button type="button" onClick={() => setInsumo(i)} className="cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-tinta hover:text-acento">
-                          {i.nombre}
-                        </button>
-                      ) : (
-                        <span className="font-medium">{i.nombre}</span>
-                      )}
-                      {i.tipo === 'preparacion' ? (
-                        <Insignia tono="neutro" className="ml-2">
-                          Preparación
-                        </Insignia>
-                      ) : null}
-                      {i.bajoMinimo ? (
-                        <Insignia tono="alerta" className="ml-2">
-                          Bajo mínimo
-                        </Insignia>
-                      ) : null}
-                    </Td>
-                    {stock.depositos.map((d) => (
-                      <Td key={d.id} className="text-right tabular-nums text-tinta-suave">
-                        {i.porDeposito[d.id] ? formatearCantidad(i.porDeposito[d.id]!, i.unidad) : '—'}
-                      </Td>
-                    ))}
-                    <Td className={i.total < 0 ? 'text-right tabular-nums text-error' : 'text-right tabular-nums'}>{formatearCantidad(i.total, i.unidad)}</Td>
-                    <Td className="text-right tabular-nums text-tinta-suave">
-                      {pesosDesdeCentavos(Math.round(i.costoUnitario * (i.unidad === 'u' ? 1 : 1000)))}
-                      <span className="text-xs">/{i.unidad === 'g' ? 'kg' : i.unidad === 'ml' ? 'l' : 'u.'}</span>
-                    </Td>
-                    <Td className="text-right tabular-nums">{pesosDesdeCentavos(Math.round(Math.max(i.total, 0) * i.costoUnitario))}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Tabla>
-          </div>
-        )}
-      </Tarjeta>
+      {/* Un solo bloque: sueltos, el contenedor de la página les pone su separación grande entre cada uno. */}
+      <div>
+        {stock.insumos.length ? <div className="mb-3">{buscador}</div> : null}
 
-      {insumo !== undefined ? <ModalInsumo key={insumo?.id ?? 'nuevo'} insumo={insumo} alCerrar={() => setInsumo(undefined)} /> : null}
+        <Tarjeta>
+          {stock.insumos.length === 0 ? (
+            <EstadoVacio titulo="Todavía no hay insumos" detalle="Se cargan desde Productos, como productos con stock." />
+          ) : filas.length === 0 ? (
+            <EstadoVacio icono={<Search size={28} strokeWidth={1.5} />} titulo={`Ningún insumo coincide con «${buscando}»`} />
+          ) : (
+            <div className="overflow-x-auto">
+              <Tabla>
+                <thead>
+                  <tr>
+                    <Th>Insumo</Th>
+                    <Th className="max-sm:hidden">Nivel</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((i) => (
+                    <tr key={i.id}>
+                      <Td>
+                        <div className="flex items-center gap-3">
+                          <Miniatura
+                            url={i.fotoVersion ? urlFotoInsumo(i.id, i.fotoVersion) : null}
+                            icono={<Package size={16} strokeWidth={1.5} aria-hidden="true" />}
+                            className="size-10 rounded-lg"
+                          />
+                          <div className="min-w-0 flex-1">
+                            {administra ? (
+                              <button type="button" onClick={() => setAbiertoId(i.id)} className="cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-tinta hover:text-acento">
+                                {i.nombre}
+                              </button>
+                            ) : (
+                              <span className="font-medium">{i.nombre}</span>
+                            )}
+                            {i.tipo === 'preparacion' ? (
+                              <Insignia tono="neutro" className="ml-2">
+                                Preparación
+                              </Insignia>
+                            ) : null}
+                            {/* En el teléfono el nivel va debajo del nombre: en su columna, la barra quedaba cortada al costado. */}
+                            <div className="mt-1.5 sm:hidden">{nivel(i)}</div>
+                          </div>
+                        </div>
+                      </Td>
+                      <Td className="max-sm:hidden">{nivel(i)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Tabla>
+            </div>
+          )}
+        </Tarjeta>
+        <div className="mt-4 empty:hidden">{paginacion}</div>
+      </div>
+
+      {abierto && productos ? <ModalProducto key={abierto.id} abierto={{ tipo: 'stock', producto: abierto }} productos={productos} alCerrar={() => setAbiertoId(null)} /> : null}
       {movimiento ? <ModalMovimiento tipo={movimiento} stock={stock} alCerrar={() => setMovimiento(null)} /> : null}
     </>
   );

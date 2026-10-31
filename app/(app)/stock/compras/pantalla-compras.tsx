@@ -1,185 +1,208 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { Plus, X } from 'lucide-react';
+import { startTransition, useOptimistic, useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { FileText, Paperclip, Plus, Wallet } from 'lucide-react';
 import { Boton } from '@/components/boton';
-import { Campo } from '@/components/campo';
-import { Modal } from '@/components/modal';
-import { NumeroInline } from '@/components/numero-inline';
-import { Selector } from '@/components/selector';
-import { useToast } from '@/components/toast';
-import { EstadoVacio, Tabla, Tarjeta, Td, Th, TituloSeccion } from '@/components/ui';
-import { NOMBRE_UNIDAD } from '@/dominio/stock';
-import { centavosDesdeTexto, fechaCorta, numeroDesdeTexto, pesosDesdeCentavos } from '@/lib/formato';
+import { Tabs } from '@/components/tabs';
+import { EstadoVacio, Metrica, Tabla, Tarjeta, Td, Th } from '@/components/ui';
+import { cn } from '@/lib/cn';
+import { fechaCorta, pesosDesdeCentavos } from '@/lib/formato';
+import type { CuentasDeProveedores, ListadoFacturas } from '@/servidor/compras';
 import type { Stock } from '@/servidor/stock';
-import { accionRegistrarCompra } from '../acciones';
+import { InsigniaEstado } from './estado-comprobante';
+import { FichaFactura } from './ficha-factura';
+import { ModalComprobante } from './modal-comprobante';
+import { ModalCuenta } from './modal-cuenta';
+import { ModalPago } from './modal-pago';
 
-interface FilaCompra {
-  id: string;
-  fecha: string;
-  numeroFactura: string;
-  totalCentavos: number;
-  proveedor: string;
-  deposito: string;
+interface Props {
+  vista: 'facturas' | 'proveedores';
+  resumen: { gastoCentavos: number; pagadoCentavos: number; deudaCentavos: number; enReclamoCentavos: number; saldoAFavorCentavos: number };
+  listado: ListadoFacturas | null;
+  cuentas: CuentasDeProveedores | null;
+  stock: Stock;
+  filtrando: boolean;
+  buscador: ReactNode;
+  filtro: ReactNode;
+  paginacion: ReactNode;
 }
 
-function hoy(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
-}
+/**
+ * Las facturas de los proveedores y lo que se les debe. Las cifras de arriba
+ * son del período elegido, salvo la deuda, que es la de hoy sumando todos los
+ * meses: lo que se debe no se reinicia cuando cambia el mes.
+ */
+export function PantallaCompras({ vista, resumen, listado, cuentas, stock, filtrando, buscador, filtro, paginacion }: Props) {
+  const router = useRouter();
+  const ruta = usePathname();
+  const parametros = useSearchParams();
+  const [vistaVisible, setVistaVisible] = useOptimistic(vista);
+  const [cargando, setCargando] = useState(false);
+  const [pagando, setPagando] = useState(false);
+  const [fichaId, setFichaId] = useState<string | null>(null);
+  const [cuentaId, setCuentaId] = useState<string | null>(null);
+  const proveedores = stock.proveedores.map((p) => ({ id: p.id, nombre: p.nombre }));
 
-function ModalCompra({ stock, alCerrar }: { stock: Stock; alCerrar: () => void }) {
-  const toast = useToast();
-  const [proveedorId, setProveedorId] = useState<string | null>(null);
-  const [depositoId, setDepositoId] = useState<string | null>(null);
-  const [factura, setFactura] = useState('');
-  const [fecha, setFecha] = useState(hoy);
-  const [lineas, setLineas] = useState([{ clave: crypto.randomUUID(), insumoId: null as string | null, presentacionId: null as string | null, cantidad: '', costo: '' }]);
-  const [error, setError] = useState<string>();
-  const [guardando, iniciar] = useTransition();
-
-  const cambiar = (clave: string, cambios: Partial<(typeof lineas)[number]>) => setLineas(lineas.map((l) => (l.clave === clave ? { ...l, ...cambios } : l)));
-  const total = lineas.reduce((s, l) => s + (centavosDesdeTexto(l.costo || '0') ?? 0), 0);
-
-  function guardar() {
-    iniciar(async () => {
-      const resultado = await accionRegistrarCompra({
-        proveedorId,
-        depositoId,
-        numeroFactura: factura,
-        fecha,
-        lineas: lineas.map((l) => ({
-          insumoId: l.insumoId,
-          presentacionId: l.presentacionId,
-          cantidadPresentaciones: numeroDesdeTexto(l.cantidad || '0') ?? 0,
-          costoCentavos: centavosDesdeTexto(l.costo || '0') ?? 0,
-        })),
-      });
-      if (!resultado.ok) return setError(resultado.error);
-      toast.exito('Compra registrada', 'El stock y el costo promedio quedaron actualizados.');
-      alCerrar();
+  function cambiarVista(valor: string) {
+    // El período se conserva; los filtros de la lista de facturas no aplican a la otra vista.
+    const consulta = new URLSearchParams();
+    for (const clave of ['tipo', 'valor']) if (parametros.get(clave)) consulta.set(clave, parametros.get(clave)!);
+    if (valor === 'facturas') consulta.set('vista', 'facturas');
+    startTransition(() => {
+      setVistaVisible(valor as Props['vista']);
+      router.replace(`${ruta}?${consulta}`, { scroll: false });
     });
   }
 
   return (
-    <Modal abierto alCerrar={alCerrar} titulo="Nueva compra">
-      <div className="modal-cuerpo flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="etiqueta-campo">Proveedor</label>
-            <Selector opciones={stock.proveedores.map((p) => ({ valor: p.id, etiqueta: p.nombre }))} valor={proveedorId} alElegir={setProveedorId} buscador vacio="Cargá un proveedor desde Stock" />
-          </div>
-          <div>
-            <label className="etiqueta-campo">Entra a</label>
-            <Selector opciones={stock.depositos.map((d) => ({ valor: d.id, etiqueta: d.nombre }))} valor={depositoId} alElegir={setDepositoId} />
-          </div>
-          <Campo etiqueta="Número de factura" value={factura} onChange={(e) => setFactura(e.target.value)} required />
-          <Campo etiqueta="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
-        </div>
-        <div>
-          <div className="mb-1 grid grid-cols-[1fr_1fr_5rem_7rem_2rem] gap-2 text-xs text-tinta-tenue">
-            <span>Insumo</span>
-            <span>Presentación</span>
-            <span className="text-right">Cantidad</span>
-            <span className="text-right">Costo total</span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {lineas.map((l) => {
-              const insumo = stock.insumos.find((i) => i.id === l.insumoId);
-              return (
-                <div key={l.clave} className="grid grid-cols-[1fr_1fr_5rem_7rem_2rem] items-center gap-2">
-                  <Selector
-                    opciones={stock.insumos.filter((i) => i.tipo === 'compra').map((i) => ({ valor: i.id, etiqueta: i.nombre }))}
-                    valor={l.insumoId}
-                    alElegir={(insumoId) => cambiar(l.clave, { insumoId, presentacionId: null })}
-                    buscador
-                  />
-                  <Selector
-                    opciones={[
-                      { valor: 'suelto', etiqueta: insumo ? `Suelto (${NOMBRE_UNIDAD[insumo.unidad]})` : 'Suelto' },
-                      ...(insumo?.presentaciones.map((p) => ({ valor: p.id, etiqueta: p.nombre })) ?? []),
-                    ]}
-                    valor={l.presentacionId ?? 'suelto'}
-                    alElegir={(v) => cambiar(l.clave, { presentacionId: v === 'suelto' ? null : v })}
-                    deshabilitado={!insumo}
-                  />
-                  <NumeroInline etiqueta="Cantidad" valor={l.cantidad} alCambiar={(cantidad) => cambiar(l.clave, { cantidad })} decimales={3} />
-                  <NumeroInline etiqueta="Costo total" valor={l.costo} alCambiar={(costo) => cambiar(l.clave, { costo })} decimales={2} />
-                  <Boton variante="fantasma" tamano="sm" soloIcono aria-label="Quitar línea" onClick={() => setLineas(lineas.filter((x) => x.clave !== l.clave))} disabled={lineas.length === 1}>
-                    <X size={14} strokeWidth={1.5} />
-                  </Boton>
-                </div>
-              );
-            })}
-          </div>
-          <Boton
-            variante="fantasma"
-            tamano="sm"
-            className="mt-2"
-            onClick={() => setLineas([...lineas, { clave: crypto.randomUUID(), insumoId: null, presentacionId: null, cantidad: '', costo: '' }])}
-          >
-            <Plus size={14} strokeWidth={1.5} /> Línea
-          </Boton>
-        </div>
-        <div className="flex items-baseline justify-between border-t border-borde pt-3">
-          <span className="text-sm text-tinta-suave">Total de la factura</span>
-          <span className="text-lg font-semibold tabular-nums text-tinta">{pesosDesdeCentavos(total)}</span>
-        </div>
-        {error ? <p className="text-sm text-error">{error}</p> : null}
+    <div>
+      <div className="mb-6 grid gap-3 min-[360px]:grid-cols-2 lg:grid-cols-4">
+        <Metrica etiqueta="Facturado en el período" valor={pesosDesdeCentavos(resumen.gastoCentavos)} />
+        <Metrica etiqueta="Pagado en el período" valor={pesosDesdeCentavos(resumen.pagadoCentavos)} />
+        <Metrica
+          etiqueta="Deuda total"
+          valor={pesosDesdeCentavos(resumen.deudaCentavos)}
+          detalle={resumen.enReclamoCentavos > 0 ? `${pesosDesdeCentavos(resumen.enReclamoCentavos)} en reclamo` : 'Todos los meses'}
+          tono={resumen.deudaCentavos > 0 ? 'error' : undefined}
+        />
+        <Metrica etiqueta="A favor" valor={pesosDesdeCentavos(resumen.saldoAFavorCentavos)} detalle="Pagado de más a proveedores" />
       </div>
-      <footer className="modal-pie">
-        <Boton variante="secundario" onClick={alCerrar} disabled={guardando}>
-          Cancelar
-        </Boton>
-        <Boton variante="primario" onClick={guardar} cargando={guardando}>
-          Registrar compra
-        </Boton>
-      </footer>
-    </Modal>
-  );
-}
 
-export function PantallaCompras({ compras, stock }: { compras: FilaCompra[]; stock: Stock }) {
-  const [nueva, setNueva] = useState(false);
-  return (
-    <>
-      <TituloSeccion
-        accion={
-          <Boton variante="primario" onClick={() => setNueva(true)}>
-            <Plus size={15} strokeWidth={1.75} /> Nueva compra
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <Tabs
+          etiqueta="Vista de compras"
+          valor={vistaVisible}
+          alCambiar={cambiarVista}
+          opciones={[
+            { valor: 'proveedores', etiqueta: 'Proveedores' },
+            { valor: 'facturas', etiqueta: 'Facturas' },
+          ]}
+          parejas
+        />
+        <div className="flex flex-wrap gap-2">
+          <Boton variante="secundario" onClick={() => setPagando(true)}>
+            <Wallet size={15} strokeWidth={1.5} /> Registrar pago
           </Boton>
-        }
-      >
-        Compras
-      </TituloSeccion>
-      <Tarjeta>
-        {compras.length === 0 ? (
-          <EstadoVacio titulo="Todavía no hay compras registradas" />
-        ) : (
-          <Tabla>
-            <thead>
-              <tr>
-                <Th>Fecha</Th>
-                <Th>Proveedor</Th>
-                <Th>Factura</Th>
-                <Th>Depósito</Th>
-                <Th className="text-right">Total</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {compras.map((c) => (
-                <tr key={c.id}>
-                  <Td className="tabular-nums">{fechaCorta(c.fecha)}</Td>
-                  <Td className="font-medium">{c.proveedor}</Td>
-                  <Td className="text-tinta-suave">{c.numeroFactura}</Td>
-                  <Td className="text-tinta-suave">{c.deposito}</Td>
-                  <Td className="text-right tabular-nums">{pesosDesdeCentavos(c.totalCentavos)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Tabla>
-        )}
-      </Tarjeta>
-      {nueva ? <ModalCompra stock={stock} alCerrar={() => setNueva(false)} /> : null}
-    </>
+          <Boton variante="primario" onClick={() => setCargando(true)}>
+            <Plus size={15} strokeWidth={1.75} /> Cargar factura
+          </Boton>
+        </div>
+      </div>
+
+      {vistaVisible === 'facturas' && listado ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            {buscador}
+            {filtro}
+          </div>
+          <Tarjeta padding={false}>
+            {listado.filas.length === 0 ? (
+              <div className="p-5 sm:p-6">
+                <EstadoVacio icono={<FileText size={28} strokeWidth={1.5} />} titulo={filtrando ? 'Ningún comprobante coincide' : 'No hay comprobantes en este período'} />
+              </div>
+            ) : (
+              <div className="overflow-x-auto px-4 py-1 sm:px-5">
+                <Tabla>
+                  <thead>
+                    <tr>
+                      <Th className="max-sm:hidden">Fecha</Th>
+                      <Th>Proveedor</Th>
+                      <Th className="max-sm:hidden">Comprobante</Th>
+                      <Th className="text-right">Total</Th>
+                      <Th className="text-right max-sm:hidden">Saldo</Th>
+                      <Th>Estado</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listado.filas.map((f) => (
+                      <tr key={f.id} onClick={() => setFichaId(f.id)} className={cn('cursor-pointer hover:bg-lienzo', f.estado === 'anulada' && 'opacity-60')}>
+                        <Td className="tabular-nums max-sm:hidden">{fechaCorta(f.fecha)}</Td>
+                        <Td className="font-medium">
+                          {f.proveedor}
+                          {/* En el teléfono la fecha y el número van debajo del proveedor, en vez de en sus columnas. */}
+                          <span className="block text-xs font-normal tabular-nums text-tinta-tenue sm:hidden">
+                            {fechaCorta(f.fecha)} · {f.tipo === 'nota_credito' ? 'NC ' : ''}
+                            {f.numeroFactura}
+                          </span>
+                        </Td>
+                        <Td className="max-sm:hidden">
+                          <button type="button" onClick={() => setFichaId(f.id)} className="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left text-tinta hover:text-acento">
+                            {f.tipo === 'nota_credito' ? 'NC ' : ''}
+                            {f.numeroFactura}
+                            {f.tieneAdjunto ? <Paperclip size={13} strokeWidth={1.5} className="text-tinta-tenue" aria-label="Tiene foto" /> : null}
+                          </button>
+                        </Td>
+                        <Td className={cn('text-right tabular-nums', f.estado === 'anulada' && 'line-through')}>
+                          {f.tipo === 'nota_credito' ? '−' : ''}
+                          {pesosDesdeCentavos(f.totalCentavos)}
+                        </Td>
+                        <Td className="text-right tabular-nums max-sm:hidden">{f.tipo === 'factura' && f.estado !== 'anulada' && f.saldoCentavos > 0 ? pesosDesdeCentavos(f.saldoCentavos) : '—'}</Td>
+                        <Td>
+                          <InsigniaEstado estado={f.estado} />
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Tabla>
+              </div>
+            )}
+          </Tarjeta>
+          <div className="mt-4 empty:hidden">{paginacion}</div>
+        </>
+      ) : null}
+
+      {vistaVisible === 'proveedores' && cuentas ? (
+        <>
+          <div className="mb-3">{buscador}</div>
+          <Tarjeta padding={false}>
+            {cuentas.filas.length === 0 ? (
+              <div className="p-5 sm:p-6">
+                <EstadoVacio titulo={filtrando ? 'Ningún proveedor coincide' : 'Todavía no hay facturas cargadas'} />
+              </div>
+            ) : (
+              <div className="overflow-x-auto px-4 py-1 sm:px-5">
+                <Tabla>
+                  <thead>
+                    <tr>
+                      <Th>Proveedor</Th>
+                      <Th className="text-right max-sm:hidden">Facturado</Th>
+                      <Th className="text-right max-sm:hidden">Pagado</Th>
+                      <Th className="text-right">Deuda</Th>
+                      <Th className="text-right max-sm:hidden">Impagas</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cuentas.filas.map((c) => (
+                      <tr key={c.id} onClick={() => setCuentaId(c.id)} className="cursor-pointer hover:bg-lienzo">
+                        <Td>
+                          <button type="button" onClick={() => setCuentaId(c.id)} className="cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-tinta hover:text-acento">
+                            {c.nombre}
+                          </button>
+                          {c.enReclamo ? <span className="ml-2 text-xs text-error">{c.enReclamo} en reclamo</span> : null}
+                          {c.impagas ? <span className="block text-xs text-tinta-tenue sm:hidden">{c.impagas} {c.impagas === 1 ? 'impaga' : 'impagas'}</span> : null}
+                        </Td>
+                        <Td className="text-right tabular-nums text-tinta-suave max-sm:hidden">{pesosDesdeCentavos(c.facturadoCentavos)}</Td>
+                        <Td className="text-right tabular-nums text-tinta-suave max-sm:hidden">{pesosDesdeCentavos(c.pagadoCentavos)}</Td>
+                        <Td className={cn('text-right font-medium tabular-nums', c.deudaCentavos > 0 ? 'text-error' : 'text-tinta')}>
+                          {c.deudaCentavos > 0 ? pesosDesdeCentavos(c.deudaCentavos) : c.saldoAFavorCentavos > 0 ? `${pesosDesdeCentavos(c.saldoAFavorCentavos)} a favor` : '—'}
+                        </Td>
+                        <Td className="text-right tabular-nums max-sm:hidden">{c.impagas || '—'}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Tabla>
+              </div>
+            )}
+          </Tarjeta>
+          <div className="mt-4 empty:hidden">{paginacion}</div>
+        </>
+      ) : null}
+
+      {cargando ? <ModalComprobante stock={stock} alCerrar={() => setCargando(false)} /> : null}
+      {pagando ? <ModalPago proveedores={proveedores} proveedorInicial={null} alCerrar={() => setPagando(false)} /> : null}
+      {fichaId ? <FichaFactura id={fichaId} proveedores={proveedores} alCerrar={() => setFichaId(null)} /> : null}
+      {cuentaId ? <ModalCuenta proveedorId={cuentaId} proveedores={proveedores} stock={stock} alCerrar={() => setCuentaId(null)} /> : null}
+    </div>
   );
 }

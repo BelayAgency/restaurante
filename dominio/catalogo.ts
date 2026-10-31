@@ -22,7 +22,8 @@ export interface SectorCatalogo {
   alto: number;
 }
 
-export type TipoElemento = 'mesa' | 'pared' | 'barra' | 'columna' | 'puerta' | 'cocina';
+export const TIPOS_ELEMENTO = ['mesa', 'pared', 'barra', 'columna', 'puerta', 'cocina', 'ventana', 'bano', 'caja', 'planta', 'texto'] as const;
+export type TipoElemento = (typeof TIPOS_ELEMENTO)[number];
 export type FormaElemento = 'redonda' | 'rectangular';
 
 export interface ElementoPlano {
@@ -37,6 +38,8 @@ export interface ElementoPlano {
   rotacion: number;
   numeroMesa: number | null;
   capacidad: number | null;
+  /** Lo que se lee en el plano: el nombre de una barra, el texto de un cartel. */
+  etiqueta: string | null;
 }
 
 export interface EstacionCatalogo {
@@ -74,6 +77,17 @@ export interface ProductoCatalogo {
   precioId: string;
   precioCentavos: number;
   grupoIds: string[];
+  /** Cambia con cada foto nueva; `null` sin foto. Un catálogo guardado antes de que hubiera fotos no la trae. */
+  fotoVersion?: string | null;
+}
+
+/** La dirección de la foto lleva la versión: cambiar la foto cambia la dirección, y la vieja se puede guardar para siempre. */
+export function urlFotoProducto(productoId: string, version: string): string {
+  return `/api/fotos/${productoId}?v=${version}`;
+}
+
+export function urlFotoInsumo(insumoId: string, version: string): string {
+  return `/api/fotos/insumos/${insumoId}?v=${version}`;
 }
 
 export interface MedioPago {

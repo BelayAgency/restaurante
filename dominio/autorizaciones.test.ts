@@ -40,9 +40,17 @@ const cargar = (itemId = ITEM, precio = 1_000_000) =>
 const precuenta = evento('precuenta_emitida', { precuentaId: crypto.randomUUID(), totalCentavos: 1_000_000 });
 
 describe('autorizacionRequerida', () => {
-  it('anular, descontar y retirar efectivo siempre piden autorización', () => {
+  it('anular y regalar van sin autorización, aun después de la precuenta', () => {
+    const antes = reducirSalon([abrir, cargar()]).cuentas.get(CUENTA);
+    const despues = reducirSalon([abrir, cargar(), precuenta]).cuentas.get(CUENTA);
+    expect(autorizacionRequerida(evento('item_anulado', { itemId: ITEM }), antes)).toBeNull();
+    expect(autorizacionRequerida(evento('item_cortesia', { itemId: ITEM }), antes)).toBeNull();
+    expect(autorizacionRequerida(evento('item_anulado', { itemId: ITEM }), despues)).toBeNull();
+    expect(autorizacionRequerida(evento('item_cortesia', { itemId: ITEM }), despues)).toBeNull();
+  });
+
+  it('descontar siempre pide autorización', () => {
     const cuenta = reducirSalon([abrir, cargar()]).cuentas.get(CUENTA);
-    expect(autorizacionRequerida(evento('item_anulado', { itemId: ITEM }), cuenta)).toBe('anular_item');
     expect(autorizacionRequerida(evento('descuento_aplicado', { descuentoId: crypto.randomUUID(), porcentaje: 10, montoCentavos: 100_000 }), cuenta)).toBe('descuento');
   });
 

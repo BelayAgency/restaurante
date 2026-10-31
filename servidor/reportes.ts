@@ -1,12 +1,14 @@
 import 'server-only';
 import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '@/db/cliente';
-import { categorias, compras, insumos, lineasReceta, movimientosStock, productos, proveedores, recetas, usuarios } from '@/db/esquema';
+import { categorias, compras, insumos, lineasReceta, mediosPago, movimientosStock, productos, proveedores, recetas, usuarios } from '@/db/esquema';
 import { puede } from '@/dominio/permisos';
+import { arqueo, diferenciaTotal, reducirCaja } from '@/dominio/reductores/caja';
 import { importeItem, reducirSalon } from '@/dominio/reductores/salon';
 import { costoPorcion, type UnidadBase } from '@/dominio/stock';
 import { ErrorAcceso, type UsuarioSesion } from '@/lib/sesion';
 import { eventosDelPeriodo } from './control';
+import { eventosAceptados } from './dia';
 
 const DIA = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
 const HORA = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false });
@@ -131,15 +133,38 @@ export async function reporteDeVentas(actor: UsuarioSesion, desde: string, hasta
 
 export type ReporteVentas = Awaited<ReturnType<typeof reporteDeVentas>>;
 
+/** Una nota de crédito resta lo que una factura suma. */
+const importeConSigno = sql`case when ${compras.tipo} = 'nota_credito' then -${compras.totalCentavos} else ${compras.totalCentavos} end`;
+
 export async function reporteDeCompras(actor: UsuarioSesion, desde: string, hasta: string) {
   if (!puede(actor, 'reportes.ver')) throw new ErrorAcceso(403, 'No tenés permiso');
   const filas = await db
-    .select({ proveedor: proveedores.nombre, totalCentavos: sql<string>`sum(${compras.totalCentavos})`, facturas: sql<string>`count(*)` })
+    .select({ proveedor: proveedores.nombre, totalCentavos: sql<string>`sum(${importeConSigno})`, facturas: sql<string>`count(*) filter (where ${compras.tipo} = 'factura')` })
     .from(compras)
     .innerJoin(proveedores, eq(proveedores.id, compras.proveedorId))
-    .where(and(gte(compras.fecha, desde), lte(compras.fecha, hasta)))
+    .where(and(gte(compras.fecha, desde), lte(compras.fecha, hasta), isNull(compras.anuladaEn)))
     .groupBy(proveedores.nombre);
   return filas.map((f) => ({ proveedor: f.proveedor, totalCentavos: Number(f.totalCentavos), facturas: Number(f.facturas) })).sort((a, b) => b.totalCentavos - a.totalCentavos);
+}
+
+/**
+ * Lo que salió del negocio en el período: las compras a proveedores (por la
+ * fecha de su factura) y los egresos de caja. Los retiros no cuentan: son
+ * efectivo que se saca de la caja, no un gasto.
+ */
+export async function gastosDelPeriodo(actor: UsuarioSesion, desde: string, hasta: string) {
+  if (!puede(actor, 'reportes.ver')) throw new ErrorAcceso(403, 'No tenés permiso');
+  const [{ todos, idsDelPeriodo }, [compra]] = await Promise.all([
+    eventosDelPeriodo(desde, hasta),
+    db
+      .select({ total: sql<string>`coalesce(sum(${importeConSigno}), 0)` })
+      .from(compras)
+      .where(and(gte(compras.fecha, desde), lte(compras.fecha, hasta), isNull(compras.anuladaEn))),
+  ]);
+  const egresosCentavos = todos
+    .filter((e) => idsDelPeriodo.has(e.id))
+    .reduce((s, e) => s + (e.tipo === 'salida_caja' && e.datos.tipo === 'egreso' ? e.datos.montoCentavos : 0), 0);
+  return { comprasCentavos: Number(compra?.total ?? 0), egresosCentavos };
 }
 
 /** Lo que hay hoy en los depósitos, a costo promedio. */
@@ -155,3 +180,36 @@ export async function valorizacionDeStock(actor: UsuarioSesion) {
     .map((f) => ({ nombre: f.nombre, unidad: f.unidad as UnidadBase, cantidad: Number(f.cantidad), valorCentavos: Math.round(Math.max(0, Number(f.cantidad)) * f.costo) }))
     .sort((a, b) => b.valorCentavos - a.valorCentavos);
 }
+
+/**
+ * Las cajas que abrieron en el período, con lo que pasó por cada una. La
+ * diferencia del arqueo sólo existe cuando la caja ya cerró.
+ */
+export async function cajasDelPeriodo(actor: UsuarioSesion, desde: string, hasta: string) {
+  if (!puede(actor, 'reportes.ver')) throw new ErrorAcceso(403, 'No tenés permiso');
+  const [log, medios, personas] = await Promise.all([
+    eventosAceptados(['turno', 'cuenta']),
+    db.select({ id: mediosPago.id, nombre: mediosPago.nombre, efectivo: mediosPago.efectivo }).from(mediosPago),
+    db.select({ id: usuarios.id, nombre: usuarios.nombre }).from(usuarios),
+  ]);
+  const nombre = new Map(personas.map((p) => [p.id, p.nombre]));
+  return [...reducirCaja(log).turnos.values()]
+    .filter((t) => {
+      const dia = DIA.format(new Date(t.abiertoEn));
+      return dia >= desde && dia <= hasta;
+    })
+    .sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))
+    .map((t) => ({
+      id: t.id,
+      abiertoPor: nombre.get(t.abiertoPor) ?? '—',
+      abiertoEn: t.abiertoEn,
+      cerradoEn: t.cerradoEn,
+      cobros: t.cobros,
+      ventasCentavos: t.consumoCentavos,
+      propinasCentavos: t.propinasCentavos,
+      salidasCentavos: t.salidas.reduce((s, x) => s + x.montoCentavos, 0),
+      diferenciaCentavos: t.cerradoEn ? diferenciaTotal(arqueo(t, medios)) : null,
+    }));
+}
+
+export type CajaDelPeriodo = Awaited<ReturnType<typeof cajasDelPeriodo>>[number];

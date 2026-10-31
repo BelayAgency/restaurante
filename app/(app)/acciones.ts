@@ -19,6 +19,7 @@ import {
   enviarCodigoRecuperacion,
   establecerPin,
   iniciarCambioCredencial,
+  listarUsuarios,
   verificarCambioCredencial,
 } from '@/servidor/usuarios';
 
@@ -80,7 +81,6 @@ export async function accionEstablecerPin(objetivoId: unknown, pin: unknown) {
   return ejecutar(async () => {
     const actor = await exigirSesion();
     await establecerPin(actor, id.parse(objetivoId), z.string().parse(pin), await ipCliente());
-    revalidatePath('/usuarios');
   });
 }
 
@@ -91,11 +91,14 @@ const datosNuevoUsuario = z.object({
   contrasena: z.string().max(128),
 });
 
+export async function accionListarUsuarios() {
+  return ejecutar(async () => listarUsuarios(await exigirSesion('usuarios.ver')));
+}
+
 export async function accionCrearUsuario(datos: unknown) {
   return ejecutar(async () => {
     const actor = await exigirSesion('usuarios.administrar');
     const nuevo = await crearUsuario(actor, datosNuevoUsuario.parse(datos), await ipCliente());
-    revalidatePath('/usuarios');
     return nuevo;
   });
 }
@@ -104,7 +107,6 @@ export async function accionCambiarRol(objetivoId: unknown, nuevoRol: unknown) {
   return ejecutar(async () => {
     const actor = await exigirSesion('usuarios.administrar');
     await cambiarRol(actor, id.parse(objetivoId), rol.parse(nuevoRol), await ipCliente());
-    revalidatePath('/usuarios');
   });
 }
 
@@ -112,7 +114,6 @@ export async function accionCambiarEstado(objetivoId: unknown, activo: unknown) 
   return ejecutar(async () => {
     const actor = await exigirSesion('usuarios.administrar');
     await cambiarEstado(actor, id.parse(objetivoId), z.boolean().parse(activo), await ipCliente());
-    revalidatePath('/usuarios');
   });
 }
 
@@ -120,7 +121,6 @@ export async function accionEliminarUsuario(objetivoId: unknown) {
   return ejecutar(async () => {
     const actor = await exigirSesion('usuarios.administrar');
     await eliminarUsuario(actor, id.parse(objetivoId), await ipCliente());
-    revalidatePath('/usuarios');
   });
 }
 

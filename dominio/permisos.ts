@@ -9,8 +9,6 @@ import { rolAlcanza, type Rol } from './roles';
 export type Accion =
   | 'usuarios.ver'
   | 'usuarios.administrar'
-  | 'dispositivos.registrar'
-  | 'dispositivos.administrar'
   | 'operador.cambiar'
   | 'salon.operar'
   | 'cocina.operar'
@@ -22,13 +20,13 @@ export type Accion =
   | 'reportes.ver'
   | 'carta.administrar'
   | 'plano.administrar'
-  | 'control.ver';
+  | 'control.ver'
+  | 'reservas.operar'
+  | 'compras.anular';
 
 const PERMISOS: Record<Accion, readonly Rol[]> = {
   'usuarios.ver': ['dueno', 'encargado'],
   'usuarios.administrar': ['dueno'],
-  'dispositivos.registrar': ['dueno', 'encargado'],
-  'dispositivos.administrar': ['dueno'],
   'operador.cambiar': ['dueno', 'encargado', 'cajero', 'mozo', 'cocina', 'stock'],
   'salon.operar': ['dueno', 'encargado', 'cajero', 'mozo'],
   'cocina.operar': ['dueno', 'encargado', 'cocina'],
@@ -42,6 +40,9 @@ const PERMISOS: Record<Accion, readonly Rol[]> = {
   'carta.administrar': ['dueno', 'encargado'],
   'plano.administrar': ['dueno'],
   'control.ver': ['dueno'],
+  'reservas.operar': ['dueno', 'encargado', 'cajero', 'mozo'],
+  // Cargar y pagar facturas es de quien hace las compras; anular, de quien controla.
+  'compras.anular': ['dueno', 'encargado'],
 };
 
 export interface Actor {

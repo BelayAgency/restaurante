@@ -59,11 +59,10 @@ export function Selector({
   const [abierto, setAbierto] = useState(false);
   const [escrito, setEscrito] = useState('');
   const [marcada, setMarcada] = useState(0);
-  const [posicion, setPosicion] = useState<{ top: number; left: number; width: number } | null>(
-    null,
-  );
+  const [posicion, setPosicion] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
 
   const caja = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const disparador = useRef<HTMLButtonElement>(null);
   const campoBusqueda = useRef<HTMLInputElement>(null);
   const idLista = useId();
@@ -87,17 +86,29 @@ export function Selector({
   function medirPosicion(): void {
     const rect = disparador.current?.getBoundingClientRect();
     if (!rect) return;
-    setPosicion({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    // Si abajo no entra (un selector al pie de la navegación), se abre hacia
+    // arriba. Antes de que el menú exista se estima con el alto máximo de la lista.
+    const alto = menu.current?.offsetHeight ?? 240;
+    const abajo = window.innerHeight - rect.bottom - 6;
+    const haciaArriba = abajo < alto && rect.top - 6 > abajo;
+    setPosicion(
+      haciaArriba
+        ? { bottom: window.innerHeight - rect.top + 6, left: rect.left, width: rect.width }
+        : { top: rect.bottom + 6, left: rect.left, width: rect.width },
+    );
   }
 
   useEffect(() => {
     if (!abierto) return;
     medirPosicion();
+    // Segunda medición con el menú ya dibujado y su alto real.
+    const cuadro = requestAnimationFrame(medirPosicion);
     // `capture: true` en window: el scroll del cuerpo del modal no burbujea
     // como evento normal, pero sí llega acá en la fase de captura.
     window.addEventListener('scroll', medirPosicion, true);
     window.addEventListener('resize', medirPosicion);
     return () => {
+      cancelAnimationFrame(cuadro);
       window.removeEventListener('scroll', medirPosicion, true);
       window.removeEventListener('resize', medirPosicion);
     };
@@ -185,12 +196,7 @@ export function Selector({
       </button>
 
       {abierto && posicion ? (
-        <div
-          className="selector-menu"
-          id={idLista}
-          role="listbox"
-          style={{ top: posicion.top, left: posicion.left, width: posicion.width }}
-        >
+        <div ref={menu} className="selector-menu" id={idLista} role="listbox" style={posicion}>
           {buscador ? (
             <div className="selector-buscar">
               <Search size={16} strokeWidth={1.5} />

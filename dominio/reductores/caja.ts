@@ -163,6 +163,49 @@ export function arqueo(turno: Turno, mediosConocidos: { id: string; nombre: stri
   return [...filas.values()];
 }
 
+/** Lo mínimo de una cuenta que hace falta para ubicarla en la caja; `Cuenta` del salón lo cumple. */
+interface CuentaEnCaja {
+  id: string;
+  estado: 'abierta' | 'unida' | 'cerrada';
+  cerradaEn: string | null;
+  mozoId: string;
+  cobros: { id: string; turnoId: string; consumoCentavos: number; propinaCentavos: number; cobradoEn: string; cobradoPor: string }[];
+}
+
+export type MovimientoCaja =
+  | { clase: 'apertura'; id: string; momento: string; operadorId: string; montoCentavos: number }
+  | { clase: 'cobro'; id: string; momento: string; operadorId: string; montoCentavos: number; cuentaId: string }
+  | { clase: 'sin_cobrar'; id: string; momento: string; operadorId: string; montoCentavos: 0; cuentaId: string }
+  | { clase: 'retiro' | 'egreso'; id: string; momento: string; operadorId: string; montoCentavos: number; motivo: string }
+  | { clase: 'cierre'; id: string; momento: string; operadorId: string; montoCentavos: number };
+
+/**
+ * Todo lo que pasó por una caja, del más nuevo al más viejo: la apertura, cada
+ * cobro (con la cuenta de la que salió), los retiros y egresos, el cierre, y
+ * las cuentas que se cerraron sin cobrar mientras estaba abierta, que no
+ * movieron plata pero son justamente lo que el dueño quiere encontrar. Las
+ * salidas restan.
+ */
+export function movimientosDeTurno(turno: Turno, cuentas: Iterable<CuentaEnCaja>): MovimientoCaja[] {
+  const movimientos: MovimientoCaja[] = [{ clase: 'apertura', id: `${turno.id}:apertura`, momento: turno.abiertoEn, operadorId: turno.abiertoPor, montoCentavos: turno.fondoCentavos }];
+  const dentro = (momento: string) => momento >= turno.abiertoEn && (!turno.cerradoEn || momento <= turno.cerradoEn);
+  for (const cuenta of cuentas) {
+    for (const cobro of cuenta.cobros) {
+      if (cobro.turnoId !== turno.id) continue;
+      movimientos.push({ clase: 'cobro', id: cobro.id, momento: cobro.cobradoEn, operadorId: cobro.cobradoPor, montoCentavos: cobro.consumoCentavos + cobro.propinaCentavos, cuentaId: cuenta.id });
+    }
+    if (cuenta.estado === 'cerrada' && !cuenta.cobros.length && cuenta.cerradaEn && dentro(cuenta.cerradaEn)) {
+      movimientos.push({ clase: 'sin_cobrar', id: `${cuenta.id}:sin_cobrar`, momento: cuenta.cerradaEn, operadorId: cuenta.mozoId, montoCentavos: 0, cuentaId: cuenta.id });
+    }
+  }
+  for (const s of turno.salidas) movimientos.push({ clase: s.tipo, id: s.id, momento: s.momento, operadorId: s.operadorId, montoCentavos: -s.montoCentavos, motivo: s.motivo });
+  if (turno.cerradoEn) {
+    const declarado = (turno.declarado ?? []).reduce((s, p) => s + p.montoCentavos, 0);
+    movimientos.push({ clase: 'cierre', id: `${turno.id}:cierre`, momento: turno.cerradoEn, operadorId: turno.cerradoPor ?? turno.abiertoPor, montoCentavos: declarado });
+  }
+  return movimientos.sort((a, b) => b.momento.localeCompare(a.momento));
+}
+
 export function diferenciaTotal(filas: TotalMedio[]): number {
   return filas.reduce((s, f) => s + ((f.declaradoCentavos ?? 0) - f.esperadoCentavos), 0);
 }

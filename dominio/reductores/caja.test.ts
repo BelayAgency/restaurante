@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DatosDe, EventoNuevo, TipoEvento } from '../eventos';
-import { arqueo, diferenciaTotal, reducirCaja, turnoAbierto } from './caja';
+import { arqueo, diferenciaTotal, movimientosDeTurno, reducirCaja, turnoAbierto } from './caja';
 import { reducirSalon, saldoCuenta, vistaDeMesas } from './salon';
 
 const DISPOSITIVO = '6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f';
@@ -100,5 +100,32 @@ describe('cobro y cierre de la cuenta', () => {
   it('cerrar con saldo queda como anomalía', () => {
     const estado = reducirSalon([abrir, cargar, evento('cuenta_cerrada', CUENTA, {})]);
     expect(estado.anomalias[0]!.detalle).toContain('saldo');
+  });
+});
+
+describe('movimientosDeTurno', () => {
+  it('junta apertura, cobros con su cuenta, salidas, cuentas cerradas sin cobrar y el cierre', () => {
+    const otra = '55555555-5555-4555-8555-555555555555';
+    const eventos = [
+      abrirTurno(500_000),
+      evento('cuenta_abierta', CUENTA, { tipo: 'mesa', mesaId: MESA, mozoId: 'ana', comensales: 2, nombre: null }),
+      cobro(1_000_000, 100_000, [{ medio: EFECTIVO, monto: 1_100_000 }]),
+      evento('salida_caja', TURNO, { salidaId: crypto.randomUUID(), tipo: 'egreso', montoCentavos: 200_000, motivo: 'Hielo' }),
+      evento('cuenta_abierta', otra, { tipo: 'mostrador', mesaId: null, mozoId: 'beto', comensales: 0, nombre: null }),
+      evento('cuenta_cerrada', otra, {}),
+      evento('turno_cerrado', TURNO, { declarado: [{ ...EFECTIVO, montoCentavos: 1_400_000 }] }),
+    ];
+    const turno = reducirCaja(eventos).turnos.get(TURNO)!;
+    const movimientos = movimientosDeTurno(turno, reducirSalon(eventos).cuentas.values());
+    expect(movimientos.map((m) => [m.clase, m.montoCentavos]).sort()).toEqual(
+      [
+        ['apertura', 500_000],
+        ['cierre', 1_400_000],
+        ['cobro', 1_100_000],
+        ['egreso', -200_000],
+        ['sin_cobrar', 0],
+      ].sort(),
+    );
+    expect(movimientos.find((m) => m.clase === 'cobro')).toMatchObject({ cuentaId: CUENTA });
   });
 });

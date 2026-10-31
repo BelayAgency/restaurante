@@ -98,7 +98,7 @@ Los eventos se diseñan como **hechos que se suman, no como estados que se pisan
 
 ### 2.5 PIN de operador y autorizaciones sin red
 
-- Un **dispositivo** se registra una vez con una cuenta (sesión de 400 días). Sobre ese dispositivo, cada persona se identifica con su PIN; cada evento lleva `operador_id`.
+- Un **dispositivo** genera su id la primera vez que arranca y se registra solo en el servidor con la primera sesión que sincroniza (sesión de 400 días; quién lo usó primero queda en la auditoría). No hay pantalla de dispositivos: se sacó a pedido de Franco el 29/10/2026. Sobre ese dispositivo, cada persona se identifica con su PIN; cada evento lleva `operador_id`.
 - Para validar PIN sin red el dispositivo necesita el hash. Un PIN de 6 dígitos con su hash a mano se rompe por fuerza bruta, así que: **el PIN no sirve para entrar al sistema**, sólo identifica a alguien dentro de un dispositivo ya registrado; los hashes bajan sólo a dispositivos registrados; 5 PIN fallidos bloquean al operador en ese dispositivo y generan evento; cambiar un PIN o dar de baja un dispositivo invalida lo descargado.
 - Una autorización es un evento con `autorizado_por` + `motivo_id` + texto opcional. El servidor no puede re-verificar el PIN, pero sí verifica que el que autorizó tuviera, en ese momento, un rol que puede autorizar esa acción.
 
@@ -169,10 +169,10 @@ Montos siempre en **centavos enteros** (`bigint`), en la base, en los eventos y 
 ## 5. Flujos clave
 
 - **Abrir mesa y pedir:** toque en mesa libre → modal con mozo y comensales → `cuenta_abierta` → carta con búsqueda y modificadores → `item_agregado` (borrador, se puede quitar) → "Enviar" → `items_enviados_cocina {estacion}`. Desde ahí un ítem sólo se anula con PIN de encargado.
-- **Cocina:** el KDS de cada estación reduce los eventos de envío/anulación de su estación; `comanda_en_preparacion`, `comanda_lista`. Una anulación posterior al envío aparece en el KDS tachada, no desaparece.
+- **Cocina:** el KDS de cada estación reduce los eventos de envío/anulación de su estación; sin empezar o lista (`comanda_lista`, `comanda_reabierta`; no hay estado intermedio "en preparación"). Una anulación posterior al envío aparece en el KDS tachada, no desaparece.
 - **Precuenta y cobro:** `precuenta_emitida {total}` → cualquier evento posterior sobre esa cuenta pide autorización y queda marcado → caja: `cobro_registrado {pagos[], propina, division}` → `cuenta_cerrada`. Cerrar sin cobrar = autorización.
 - **Caja:** `turno_abierto {fondo}` → retiros/egresos con autorización → `arqueo_declarado {por medio}` sin mostrar el esperado → el servidor calcula la diferencia → `turno_cerrado`.
-- **Cierre del día** (con conexión): lista de dispositivos con bandeja pendiente → confirma → congela totales del día.
+- **Cierre por turno**, no por día: el arqueo ciego de la caja es el cierre, exige todas las cuentas cerradas, y después nada se imputa a ese turno. (Hubo un cierre del día en `/caja/cierre`; se sacó a pedido del cliente.)
 - **Stock:** compra → movimientos + costo promedio; conteo ciego → diferencia contra teórico → ajuste como movimiento.
 
 ---
@@ -234,16 +234,17 @@ Las fases 0 y 1 son las largas y no muestran nada del restaurante todavía: es a
 **Fase 1** — hecha, sin desplegar. Probado:
 - Login con contador de intentos por dirección (exista o no la cuenta) y bloqueo a los 5; sesión de 400 días deslizante.
 - Recuperación por código y cambio de credenciales: código hasheado, 15 minutos, 5 intentos; soporte sobre otra cuenta → el código va a `info@belay.agency` y el aviso a la persona; todo cambio de contraseña cierra todas las sesiones; cada acción queda en `auditoria`.
-- Log de eventos inmutable en la base (trigger), recepción idempotente, rechazados guardados con motivo y no repartidos, dispositivo sin registrar → 403, canal en vivo por LISTEN/NOTIFY.
+- Log de eventos inmutable en la base (trigger), recepción idempotente, rechazados guardados con motivo y no repartidos, dispositivo dado de baja → 403, canal en vivo por LISTEN/NOTIFY.
 
 **Fase 2** — hecha, sin desplegar. Probado en el build de producción:
 - Carta: estaciones, categorías, productos con precio versionado (cambiarlo archiva el anterior) y grupos de modificadores.
 - Editor del plano (Konva): sectores, mesas redondas y rectangulares, paredes, barra, columnas, puerta y cocina; arrastrar con imán a la grilla, girar, redimensionar; guardado con auditoría y mesas archivadas, nunca borradas.
+- El 29/10/2026, a pedido de Franco, el plano dejó de ser una sección aparte: el salón es el mapa a pantalla completa (sectores, quién opera y acciones flotando arriba; leyenda con el conteo de mesas y comensales abajo; cuentas sin mesa al costado) y el dueño lo edita ahí mismo con «Editar plano». El mapa suma sillas según los lugares de cada mesa (las ocupadas se pintan), avisos sobre la mesa («Demorada», «Para servir» en los 10 minutos después de que cocina marcó listo, «Pide la cuenta», «Dos cuentas»), el mozo debajo, zoom con botones, y elementos nuevos: ventana, baños, caja, planta y texto, con nombre editable (migración 0006). El editor tiene deshacer, duplicar, girar, teclado (flechas, Supr, Ctrl+D, Ctrl+Z), medidas del sector en metros, y no deja quitar una mesa con cuenta abierta.
 - Salón: el mapa con el estado de cada mesa (libre, ocupada, pidió la cuenta, precuenta, dos cuentas), abrir mesa con mozo y comensales, cargar desde la carta con modificadores obligatorios, enviar a cocina, precuenta imprimible, mover, unir, pasar ítems y cambiar de mozo. Cuentas de mostrador y para llevar.
 - El servidor rechaza un ítem cuyo precio no coincide con la carta.
 - A 320 px de ancho.
 
-Pendiente de fases siguientes: reservas (sin módulo todavía), cierre de la cuenta (cobro, fase 4).
+Pendiente de fases siguientes: cierre de la cuenta (cobro, fase 4).
 
 **Fase 3** — hecha, sin desplegar. Pantalla de cocina (`/cocina`) por estación, guardada en el dispositivo: cada envío se parte por estación, se marca «Empezar» y «Listo», y lo listo se puede reabrir. Borde ámbar a los 10 minutos, rojo a los 20 (demorada), y la mesa se pinta de rojo en el plano. Suena un aviso cuando entra una comanda. El mozo ve cada ítem «Listo» en la cuenta. Un usuario de cocina entra directo a su pantalla. Impresoras térmicas: quedan para cuando haya nodo local (decisión 0.1).
 
@@ -262,7 +263,7 @@ No se construyeron: dependen de respuestas del cliente.
 - **Facturación electrónica (ARCA).** Si la necesita: un worker aparte con la misma imagen (`image: ${APP_IMAGEN}` en `belay/docker-compose.extra.yml`) que toma los cobros de una cola en Postgres y pide el CAE. El cobro nunca espera a ARCA: si no responde, queda en la cola y se reintenta. Hace falta: CUIT, punto de venta, certificado y tipo de comprobante.
 - **Impresoras térmicas** (comandas por estación y precuentas). Una página web no le puede mandar ESC/POS a una impresora de red: hace falta el nodo local del restaurante (decisión 0.1), que reciba los eventos y los imprima. Hoy la precuenta se imprime con el diálogo del navegador.
 - **Cobro con QR o terminal** (Mercado Pago u otro). Hoy el medio se registra a mano. Integrarlo es leer el pago confirmado y registrar el cobro con su referencia.
-- **Reservas online.** Sin módulo, y por eso el plano todavía no muestra mesas reservadas.
+- **Reservas online.** Las reservas las carga el personal (`/reservas`, y las de hoy desde el salón); la mesa se elige al llegar, por eso el plano no muestra mesas reservadas. Falta que las haga el cliente solo, y que funcionen sin conexión: hoy se leen y se guardan en el servidor.
 - **Delivery.** A confirmar con el cliente.
 
 Sin verificar todavía:
@@ -271,4 +272,4 @@ Sin verificar todavía:
 - El aviso sonoro de cocina (el navegador de esta sesión no reproduce audio).
 - El service worker: el navegador embebido de esta sesión no deja registrar ninguno. Probar en Chrome: que se registre, que la app abra sin red y que lo cargado sin red salga al volver.
 - La prueba con DevTools en modo offline (el panel del navegador de esta sesión no lo permite): abrir la app sin red, cambiar de operador y ver que la bandeja se vacía al volver.
-- El cambio de operador por PIN de punta a punta en pantalla (el reductor y el PIN tienen tests).
+- El cambio de operador por PIN (menú del usuario) de punta a punta en pantalla (el reductor y el PIN tienen tests).

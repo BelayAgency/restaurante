@@ -8,7 +8,7 @@ import type { DatosDe, EventoNuevo } from '../eventos';
 
 export const MINUTOS_DEMORA = 20;
 
-export type EstadoComanda = 'pendiente' | 'en_preparacion' | 'lista';
+export type EstadoComanda = 'pendiente' | 'lista';
 
 export interface ItemComanda {
   id: string;
@@ -29,7 +29,6 @@ export interface Comanda {
   enviadaPor: string;
   items: ItemComanda[];
   estado: EstadoComanda;
-  iniciadaEn: string | null;
   listaEn: string | null;
 }
 
@@ -68,7 +67,6 @@ export function reducirCocina(eventos: Iterable<EventoNuevo>): Map<string, Coman
               enviadaPor: evento.operadorId,
               items: [],
               estado: 'pendiente',
-              iniciadaEn: null,
               listaEn: null,
             };
             comandas.set(clave, comanda);
@@ -86,24 +84,29 @@ export function reducirCocina(eventos: Iterable<EventoNuevo>): Map<string, Coman
         break;
       case 'item_anulado':
         for (const comanda of comandas.values()) {
-          const item = comanda.items.find((i) => i.id === evento.datos.itemId);
-          if (item) item.anulado = true;
+          const posicion = comanda.items.findIndex((i) => i.id === evento.datos.itemId);
+          if (posicion < 0) continue;
+          const item = comanda.items[posicion]!;
+          const cantidad = evento.datos.cantidad;
+          if (cantidad === undefined || cantidad >= item.cantidad) item.anulado = true;
+          else {
+            // Bajaron la cantidad: cocina ve las unidades de menos tachadas al lado.
+            item.cantidad -= cantidad;
+            comanda.items.splice(posicion + 1, 0, { ...item, id: `${item.id}~${evento.id}`, cantidad, anulado: true });
+          }
         }
         break;
-      case 'comanda_iniciada':
+      // `comanda_iniciada` ya no se registra (la comanda está sin empezar o
+      // lista), pero puede haber viejos en el historial: no cambian nada.
       case 'comanda_lista':
       case 'comanda_reabierta': {
         const comanda = comandas.get(claveComanda(evento.datos.envioId, evento.datos.estacionId));
         if (!comanda) break;
-        if (evento.tipo === 'comanda_iniciada' && comanda.estado === 'pendiente') {
-          comanda.estado = 'en_preparacion';
-          comanda.iniciadaEn = evento.creadoEnDispositivo;
-        } else if (evento.tipo === 'comanda_lista') {
+        if (evento.tipo === 'comanda_lista') {
           comanda.estado = 'lista';
           comanda.listaEn = evento.creadoEnDispositivo;
-          comanda.iniciadaEn ??= evento.creadoEnDispositivo;
-        } else if (evento.tipo === 'comanda_reabierta' && comanda.estado === 'lista') {
-          comanda.estado = 'en_preparacion';
+        } else if (comanda.estado === 'lista') {
+          comanda.estado = 'pendiente';
           comanda.listaEn = null;
         }
         break;

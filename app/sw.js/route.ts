@@ -53,7 +53,8 @@ self.addEventListener('fetch', (evento) => {
   // ahí haría creer al dispositivo que está al día.
   if (url.pathname.startsWith('/api/sync') || url.pathname.startsWith('/api/auth') || url.pathname === '/api/version') return;
 
-  if (url.pathname.startsWith('/_next/static/') || url.pathname === '/icono.svg') {
+  // Las fotos llevan la versión en la dirección: una vez guardadas no cambian, y así se ven sin red.
+  if (url.pathname.startsWith('/_next/static/') || url.pathname === '/icono.svg' || (url.pathname.startsWith('/api/fotos/') && url.searchParams.has('v'))) {
     evento.respondWith(primeroCache(pedido));
     return;
   }

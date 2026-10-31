@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tipo_movimiento" ADD VALUE 'cambio_medida';

@@ -12,6 +12,7 @@ const TOKENS = [
   'lienzo',
   'superficie',
   'elevada',
+  'perilla',
   'borde',
   'borde-fuerte',
   'tinta',

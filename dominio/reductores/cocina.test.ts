@@ -55,11 +55,14 @@ describe('reducirCocina', () => {
     expect(comandas.size).toBe(0);
   });
 
-  it('pasa por preparación y lista, y se puede reabrir', () => {
+  it('pasa de sin empezar a lista, y al reabrirla vuelve a sin empezar', () => {
     const bife = crypto.randomUUID();
     const envio = crypto.randomUUID();
     const base = [cargar(bife, PARRILLA, 'Bife'), evento('items_enviados', { envioId: envio, itemIds: [bife] })];
-    const lista = reducirCocina([...base, evento('comanda_iniciada', { envioId: envio, estacionId: PARRILLA }), evento('comanda_lista', { envioId: envio, estacionId: PARRILLA })]);
+    const iniciadaVieja = reducirCocina([...base, evento('comanda_iniciada', { envioId: envio, estacionId: PARRILLA })]);
+    expect(iniciadaVieja.get(claveComanda(envio, PARRILLA))!.estado).toBe('pendiente');
+
+    const lista = reducirCocina([...base, evento('comanda_lista', { envioId: envio, estacionId: PARRILLA })]);
     expect(lista.get(claveComanda(envio, PARRILLA))!.estado).toBe('lista');
     expect(itemsListos(lista).has(bife)).toBe(true);
 
@@ -68,7 +71,7 @@ describe('reducirCocina', () => {
       evento('comanda_lista', { envioId: envio, estacionId: PARRILLA }),
       evento('comanda_reabierta', { envioId: envio, estacionId: PARRILLA }),
     ]);
-    expect(reabierta.get(claveComanda(envio, PARRILLA))!.estado).toBe('en_preparacion');
+    expect(reabierta.get(claveComanda(envio, PARRILLA))!.estado).toBe('pendiente');
   });
 
   it('una comanda sin terminar a los 20 minutos está demorada', () => {

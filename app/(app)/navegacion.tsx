@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Boxes, BookOpen, ShieldAlert, ChefHat, CircleDollarSign, LayoutGrid, PencilRuler, Tablet, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Boxes, CalendarDays, ChefHat, LayoutGrid, type LucideIcon } from 'lucide-react';
 import { puede, type Accion } from '@/dominio/permisos';
 import { useSesion } from './sesion-cliente';
 
@@ -15,15 +15,10 @@ interface Seccion {
 
 const SECCIONES: Seccion[] = [
   { href: '/', texto: 'Salón', icono: LayoutGrid, requiere: 'salon.operar' },
+  { href: '/reservas', texto: 'Reservas', icono: CalendarDays, requiere: 'reservas.operar' },
   { href: '/cocina', texto: 'Cocina', icono: ChefHat, requiere: 'cocina.operar' },
-  { href: '/caja', texto: 'Caja', icono: CircleDollarSign, requiere: 'caja.operar' },
   { href: '/stock', texto: 'Stock', icono: Boxes, requiere: 'stock.contar' },
   { href: '/reportes', texto: 'Reportes', icono: BarChart3, requiere: 'reportes.ver' },
-  { href: '/control', texto: 'Control', icono: ShieldAlert, requiere: 'control.ver' },
-  { href: '/carta', texto: 'Carta', icono: BookOpen, requiere: 'carta.administrar' },
-  { href: '/plano', texto: 'Plano', icono: PencilRuler, requiere: 'plano.administrar' },
-  { href: '/usuarios', texto: 'Usuarios', icono: Users, requiere: 'usuarios.ver' },
-  { href: '/dispositivo', texto: 'Este dispositivo', icono: Tablet },
 ];
 
 export function Navegacion() {

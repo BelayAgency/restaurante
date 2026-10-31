@@ -10,9 +10,7 @@ import type { Rol } from './roles';
  */
 
 export const ACCIONES_AUTORIZABLES = {
-  anular_item: 'Anular un ítem enviado a cocina',
   descuento: 'Descuento',
-  cortesia: 'Cortesía o invitación',
   cambiar_precio: 'Cambiar un precio en la cuenta',
   reabrir_cuenta: 'Reabrir una cuenta cerrada',
   cambiar_medio_pago: 'Cambiar el medio de pago de un cobro',
@@ -35,8 +33,6 @@ export const REGLAS_POR_DEFECTO: ReglasAutorizacion = Object.fromEntries(
 ) as ReglasAutorizacion;
 
 const DIRECTAS: Partial<Record<EventoNuevo['tipo'], AccionAutorizable>> = {
-  item_anulado: 'anular_item',
-  item_cortesia: 'cortesia',
   precio_modificado: 'cambiar_precio',
   descuento_aplicado: 'descuento',
   cuenta_reabierta: 'reabrir_cuenta',
@@ -46,7 +42,8 @@ const DIRECTAS: Partial<Record<EventoNuevo['tipo'], AccionAutorizable>> = {
 
 // Lo que cambia lo que se va a cobrar. Después de una precuenta, el cliente ya
 // vio un total: cambiarlo sin que nadie lo autorice es la forma más simple de
-// cobrar una cosa y anotar otra.
+// cobrar una cosa y anotar otra. Anular y regalar no lo piden nunca, por
+// decisión del cliente: se confirman en pantalla y quedan auditados con quién lo hizo.
 const MODIFICAN_CUENTA = new Set<EventoNuevo['tipo']>(['item_agregado', 'item_quitado', 'items_transferidos', 'cuentas_unidas']);
 
 /** La acción que este evento necesita autorizar, o `null` si va sin autorización. */
