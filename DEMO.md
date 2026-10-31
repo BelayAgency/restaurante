@@ -5,8 +5,8 @@ producción: producción es `main`, que despliega el panel de Belay en su servid
 
 ## Entrar
 
-Usuario `admin`, contraseña `admin`. Entra como el dueño, con el selector «Vista» para ver el
-sistema como cada rol.
+Usuario `admin`, contraseña `admin`: entra como Martín Gómez, el dueño, con el selector «Vista» para ver el
+sistema como cada rol. Soporte entra con `info@belay.agency` y `Soporte2026!`.
 
 ## Ponerla en marcha (una sola vez)
 

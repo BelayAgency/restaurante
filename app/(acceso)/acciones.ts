@@ -19,10 +19,10 @@ import {
 // ver la pantalla de suspendido. Lo que sí se corta es la recuperación, que
 // manda mails.
 
-// Demo: «admin» entra como la cuenta de dueño con selector de vista; la contraseña («admin»)
-// es la que dejó guardada la carga de la demo, y se verifica como cualquier otra.
+// Demo: «admin» entra como el dueño de muestra; la contraseña («admin») es la que dejó
+// guardada el armado de la demo, y se verifica como cualquier otra. Soporte entra con su mail.
 const USUARIO_DEMO = 'admin';
-const EMAIL_DEMO = 'info@belay.agency';
+const EMAIL_DEMO = 'martin.gomez@ejemplo.com';
 
 const datosEntrar = z.object({
   email: z.preprocess((v) => (typeof v === 'string' && v.trim().toLowerCase() === USUARIO_DEMO ? EMAIL_DEMO : v), esquemaEmail),

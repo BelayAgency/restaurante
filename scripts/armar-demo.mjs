@@ -1,6 +1,6 @@
 // Sólo para la demo: arma la base completa en el build, sin servidor de Postgres.
 // Corre las migraciones en un PGlite vacío, carga los datos de prueba y las
-// facturas inventadas, deja la cuenta «admin» / «admin» y guarda el resultado
+// facturas inventadas, deja las dos cuentas para entrar y guarda el resultado
 // en demo/base.tar.gz. En Vercel cada instancia arranca desde ese archivo.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,15 +23,24 @@ await base.exec(leer('datos.sql'));
 await base.exec("select pg_catalog.set_config('search_path', 'public', false)");
 await base.exec(leer('compras.sql'));
 
-const { rows } = await base.query("select id from usuarios where email = 'info@belay.agency'");
-if (!rows[0]) throw new Error('El volcado no trae la cuenta de dueño de la demo');
-await base.query(
-  `insert into cuentas_auth (id, id_cuenta, id_proveedor, usuario_id, contrasena, creado_en, actualizado_en)
-   values (gen_random_uuid()::text, $1, 'credential', $1, $2, now(), now())`,
-  [rows[0].id, await hash('admin')],
-);
+// El volcado no trae credenciales. «admin» entra como el dueño de muestra; soporte, con su mail
+// y la contraseña del seed, y con su nombre de siempre (en la base local se renombró).
+await base.query("update usuarios set nombre = 'Soporte Belay' where email = 'info@belay.agency'");
+const cuentas = [
+  ['martin.gomez@ejemplo.com', 'admin'],
+  ['info@belay.agency', 'Soporte2026!'],
+];
+for (const [email, contrasena] of cuentas) {
+  const { rows } = await base.query('select id from usuarios where email = $1', [email]);
+  if (!rows[0]) throw new Error(`El volcado no trae la cuenta ${email}`);
+  await base.query(
+    `insert into cuentas_auth (id, id_cuenta, id_proveedor, usuario_id, contrasena, creado_en, actualizado_en)
+     values (gen_random_uuid()::text, $1, 'credential', $1, $2, now(), now())`,
+    [rows[0].id, await hash(contrasena)],
+  );
+}
 
 const archivo = await base.dumpDataDir('gzip');
 writeFileSync(path.join(raiz, 'demo/base.tar.gz'), Buffer.from(await archivo.arrayBuffer()));
 await base.close();
-console.log(`[demo] base armada: ${(archivo.size / 1024 / 1024).toFixed(1)} MB; entrar con admin / admin`);
+console.log(`[demo] base armada: ${(archivo.size / 1024 / 1024).toFixed(1)} MB; entrar con admin / admin (dueño) o con soporte`);
