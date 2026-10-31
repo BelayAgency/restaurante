@@ -1,0 +1,82 @@
+# =============================================================================
+# Belay — compose del sistema de un cliente
+# =============================================================================
+# El panel lo escribe en `belay/docker-compose.yml` de cada repo y el deploy lo
+# copia al servidor. Es IDÉNTICO para todos los sistemas: lo que cambia son las
+# variables, que el deploy deja en `~/app/.env` del usuario de esa app.
+#
+#   APP_SLUG            identificador del cliente (y nombre del proyecto)
+#   APP_DOMINIO         FQDN público — Traefik rutea por acá
+#   APP_PUERTO          puerto reservado para esta app en el servidor
+#   APP_PUERTO_INTERNO  puerto donde escucha el container (3000 por defecto)
+#   APP_IMAGEN          imagen a levantar, con el commit adentro
+#
+# Los secretos de la aplicación NO están acá: van en `~/app/.env.app`, que se
+# maneja en el servidor y el deploy nunca pisa.
+#
+# Varios clientes comparten esta máquina, así que todo lo de acá abajo existe
+# para que uno no se lleve puestos a los otros: límites de CPU y memoria, tope
+# de logs, y el puerto publicado sólo en loopback.
+# =============================================================================
+
+services:
+  app:
+    image: ${APP_IMAGEN}
+    restart: unless-stopped
+
+    # Los secretos del sistema. Vive SÓLO en el servidor, así que acá se declara
+    # opcional: en el runner de Actions no existe, y sin `required: false` el
+    # `docker compose config` del deploy falla antes de construir nada.
+    env_file:
+      - path: .env.app
+        required: false
+
+    environment:
+      NODE_ENV: production
+      PORT: ${APP_PUERTO_INTERNO:-3000}
+
+    # Sólo en loopback: quien entra al servidor puede depurar con curl, pero
+    # desde afuera no hay forma de saltear Traefik y pegarle directo a la app.
+    ports:
+      - '127.0.0.1:${APP_PUERTO}:${APP_PUERTO_INTERNO:-3000}'
+
+    networks:
+      - belay
+
+    # NO hay labels de Traefik acá, y no es un olvido: el ruteo lo declara el
+    # panel con un archivo por sistema en el proxy del servidor.
+    #
+    # El descubrimiento por labels no funciona en estos servidores —Traefik le
+    # pide a Docker una versión de API que Docker 29 ya no acepta— y hacerlo
+    # funcionar exigiría montarle el socket de Docker a un proceso expuesto a
+    # internet, que equivale a darle root en la máquina.
+    #
+    # De este lado sólo hace falta estar en la red `belay` con un nombre
+    # previsible: el proxy llega a `<slug>-app-1` por ahí.
+    labels:
+      belay.slug: ${APP_SLUG}
+
+    # Un sistema que se vuelve loco no puede quedarse con toda la máquina.
+    # Si a un cliente le queda chico, se sube acá y se redeploya.
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          memory: 128M
+
+    # Sin esto, un log ruidoso llena el disco del servidor y se caen todos.
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  # La crea el bootstrap del servidor; Traefik también está colgado de acá.
+  belay:
+    external: true
