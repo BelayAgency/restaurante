@@ -10,7 +10,7 @@ const EMAIL = 'info@belay.agency';
 const CONTRASENA_INICIAL = 'Soporte2026!';
 
 async function sembrar(): Promise<void> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL, max: 1 });
   const db = drizzle(pool);
   try {
     const [existente] = await db.select({ id: usuarios.id }).from(usuarios).where(eq(usuarios.email, EMAIL));

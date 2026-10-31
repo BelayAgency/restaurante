@@ -171,9 +171,11 @@ export function PantallaEntrar({
       <AvisoDeAcceso aviso={aviso} />
 
       <Campo
-        etiqueta="Email"
-        type="email"
+        etiqueta="Usuario"
+        type="text"
         autoComplete="username"
+        autoCapitalize="none"
+        placeholder="admin"
         value={email}
         onChange={(e) => alCambiarEmail(e.target.value)}
         disabled={enviando}

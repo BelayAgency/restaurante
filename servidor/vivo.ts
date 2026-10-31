@@ -13,7 +13,8 @@ const estado = globalThis as unknown as { oyentesEventos?: Set<Oyente>; clienteL
 const oyentes = (estado.oyentesEventos ??= new Set());
 
 function conectar(): Promise<Client> {
-  const cliente = new Client({ connectionString: process.env.DATABASE_URL });
+  // LISTEN necesita una conexión directa: el pooler de Neon (modo transacción) no reparte avisos.
+  const cliente = new Client({ connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL });
   const conexion = cliente.connect().then(async () => {
     await cliente.query('LISTEN eventos_nuevos');
     cliente.on('notification', (aviso) => {

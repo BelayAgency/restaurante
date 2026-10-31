@@ -19,7 +19,16 @@ import {
 // ver la pantalla de suspendido. Lo que sí se corta es la recuperación, que
 // manda mails.
 
-const datosEntrar = z.object({ email: esquemaEmail, contrasena: z.string().min(1).max(128), mantener: z.boolean() });
+// Demo: «admin» entra como la cuenta de dueño con selector de vista; la contraseña («admin»)
+// es la que dejó guardada la carga de la demo, y se verifica como cualquier otra.
+const USUARIO_DEMO = 'admin';
+const EMAIL_DEMO = 'info@belay.agency';
+
+const datosEntrar = z.object({
+  email: z.preprocess((v) => (typeof v === 'string' && v.trim().toLowerCase() === USUARIO_DEMO ? EMAIL_DEMO : v), esquemaEmail),
+  contrasena: z.string().min(1).max(128),
+  mantener: z.boolean(),
+});
 
 export async function accionEntrar(datos: unknown): Promise<ResultadoEntrar> {
   const validado = datosEntrar.safeParse(datos);

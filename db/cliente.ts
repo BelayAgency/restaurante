@@ -9,7 +9,9 @@ const global_ = globalThis as unknown as { poolRestaurante?: Pool };
 
 const pool =
   global_.poolRestaurante ??
-  new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
+  // En Vercel cada función es un proceso aparte: con 10 por cada una se agota enseguida el
+  // tope de conexiones de la base gratuita. Ahí va por el pooler de Neon, con pocas.
+  new Pool({ connectionString: process.env.DATABASE_URL, max: process.env.VERCEL ? 3 : 10 });
 
 if (process.env.NODE_ENV !== 'production') global_.poolRestaurante = pool;
 

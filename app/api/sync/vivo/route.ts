@@ -5,6 +5,10 @@ import { suscribirEventos } from '@/servidor/vivo';
 // Cloudflare corta una respuesta que no manda nada en 100 segundos.
 const LATIDO_MS = 25_000;
 
+// En Vercel una función vive como mucho esto; el navegador se reconecta solo (retry: 5000)
+// y mientras tanto el pull periódico sigue trayendo lo nuevo.
+export const maxDuration = 300;
+
 export async function GET(pedido: Request) {
   // Sin esto el build intenta prerenderizarla y choca con la sesión.
   await connection();

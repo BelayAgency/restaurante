@@ -19,8 +19,12 @@ const esquema = {
 };
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL,
+  // En Vercel, sin configurar nada, la URL de producción del proyecto.
+  baseURL: process.env.BETTER_AUTH_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined),
   secret: process.env.BETTER_AUTH_SECRET,
+  // Los previews de Vercel tienen su propia URL por deploy y por rama: sin esto, el login
+  // rebota en todos menos en el de producción.
+  trustedOrigins: [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL].filter(Boolean).map((u) => `https://${u}`),
   database: drizzleAdapter(db, { provider: 'pg', schema: esquema }),
   emailAndPassword: {
     enabled: true,
