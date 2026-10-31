@@ -1,8 +1,9 @@
 import type { NextConfig } from 'next';
 
-// En el Dockerfile llega como build-arg con el SHA del commit; el cartel de
-// nueva versión compara este valor contra /api/version.
-const idBuild = process.env.ID_BUILD ?? 'dev';
+// En el Dockerfile llega como build-arg con el SHA del commit; en Vercel, su propia variable.
+// El cartel de nueva versión compara este valor contra /api/version, y el service worker
+// nombra su caché con él: si quedara fijo, nadie saldría nunca de la versión vieja.
+const idBuild = process.env.ID_BUILD ?? process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev';
 
 const nextConfig: NextConfig = {
   output: 'standalone',

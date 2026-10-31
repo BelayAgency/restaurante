@@ -5,7 +5,7 @@ const VERSION = process.env.NEXT_PUBLIC_ID_BUILD ?? 'dev';
 
 const CODIGO = `
 const CACHE = 'restaurante-${VERSION}';
-const PRECARGA = ['/', '/dispositivo', '/entrar', '/manifest.webmanifest', '/icono.svg'];
+const PRECARGA = ['/', '/entrar', '/manifest.webmanifest', '/icono.svg'];
 
 self.addEventListener('install', (evento) => {
   evento.waitUntil(
