@@ -93,7 +93,7 @@ export function ModalComprobante({ stock, proveedorInicial = null, alCerrar }: {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="etiqueta-campo">Proveedor</label>
-            <Selector opciones={stock.proveedores.map((p) => ({ valor: p.id, etiqueta: p.nombre }))} valor={proveedorId} alElegir={setProveedorId} buscador vacio="Cargá el proveedor desde Stock" />
+            <Selector opciones={stock.proveedores.map((p) => ({ valor: p.id, etiqueta: p.nombre }))} valor={proveedorId} alElegir={setProveedorId} buscador vacio="Cargá el proveedor desde Compras" />
           </div>
           <Campo etiqueta="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
           <Campo etiqueta="Número" value={numero} onChange={(e) => setNumero(e.target.value)} maxLength={40} placeholder="0000-00000000" required />

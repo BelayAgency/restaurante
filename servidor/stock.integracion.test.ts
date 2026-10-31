@@ -12,6 +12,7 @@ import {
   guardarInsumo,
   guardarProveedor,
   guardarReceta,
+  ingresarStock,
   leerConteo,
   leerRecetas,
   leerStock,
@@ -169,5 +170,17 @@ describe('cambio de medida', () => {
     const sal = await guardarInsumo(actor, { id: null, nombre: `Sal ${sufijo}`, tipo: 'compra', unidad: 'g', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [] }, null);
     await guardarInsumo(actor, { id: sal, nombre: `Sal ${sufijo}`, tipo: 'compra', unidad: 'ml', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [] }, null);
     expect((await leerStock(actor)).insumos.find((i) => i.id === sal)!.unidad).toBe('ml');
+  });
+});
+
+describe('ingreso de stock', () => {
+  it('suma varias filas de una vez al depósito de venta, al costo que ya tienen', async () => {
+    const harina = await guardarInsumo(actor, { id: null, nombre: `Harina ${sufijo}`, tipo: 'compra', unidad: 'g', contenidoPorUnidad: null, stockMinimo: 0, presentaciones: [] }, null);
+    const vino = await guardarInsumo(actor, { id: null, nombre: `Syrah ${sufijo}`, tipo: 'compra', unidad: 'ml', contenidoPorUnidad: 750, stockMinimo: 0, presentaciones: [] }, null);
+    await ingresarStock(actor, { lineas: [{ insumoId: harina, cantidad: 25_000 }, { insumoId: vino, cantidad: 4_500 }] }, null);
+
+    const stock = (await leerStock(actor)).insumos;
+    expect(stock.find((i) => i.id === harina)!.porDeposito[depositoId]).toBeCloseTo(25_000);
+    expect(stock.find((i) => i.id === vino)!.total).toBeCloseTo(4_500);
   });
 });

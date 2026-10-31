@@ -490,6 +490,37 @@ export async function registrarProduccion(actor: UsuarioSesion, datos: { prepara
 
 export type TipoSalida = 'merma' | 'vencimiento' | 'comida_personal';
 
+/**
+ * Mercadería que entra sin factura de por medio (la que trae alguien, la que
+ * aparece en un depósito): va al depósito de venta, que es del que descuentan
+ * las ventas, al costo que ya tiene cada producto. Todas las filas de una
+ * carga comparten referencia y quedan juntas en el registro.
+ */
+export async function ingresarStock(actor: UsuarioSesion, datos: { lineas: { insumoId: string; cantidad: number }[] }, ip: string | null) {
+  exigir(actor);
+  const lote = crypto.randomUUID();
+  await db.transaction(async (tx) => {
+    const [deVenta] = await tx.select({ id: depositos.id }).from(depositos).where(and(eq(depositos.deVenta, true), isNull(depositos.archivadoEn))).limit(1);
+    if (!deVenta) throw new ErrorDominio('Falta marcar el depósito de venta');
+    for (const linea of datos.lineas) {
+      const insumo = await tx.query.insumos.findFirst({ where: and(eq(insumos.id, linea.insumoId), isNull(insumos.archivadoEn)) });
+      if (!insumo) throw new ErrorDominio('Uno de los productos ya no existe');
+      await moverStock(tx, {
+        insumoId: linea.insumoId,
+        depositoId: deVenta.id,
+        tipo: 'compra',
+        cantidad: linea.cantidad,
+        costoUnitario: insumo.costoUnitario,
+        actorId: actor.id,
+        motivo: 'Ingreso de stock',
+        referenciaTipo: 'ingreso',
+        referenciaId: lote,
+      });
+    }
+  });
+  await registrar(actor, 'stock.ingresado', lote, { lineas: datos.lineas.length }, ip);
+}
+
 /** Mermas, vencimientos y comida del personal: salidas con motivo, cada una con su nombre. */
 export async function registrarSalida(
   actor: UsuarioSesion,
