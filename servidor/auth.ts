@@ -43,6 +43,9 @@ export const auth = betterAuth({
     expiresIn: DURACION_SESION_S,
     // Deslizante: con un día, quien entra seguido no vuelve a ver el login.
     updateAge: 24 * 60 * 60,
+    // Demo: Vercel atiende con varias instancias y cada una tiene su base en memoria; la
+    // sesión creada en una no existe en las otras. Firmada en la cookie, la valida cualquiera.
+    cookieCache: { enabled: true, maxAge: 7 * 24 * 60 * 60 },
     fields: {
       expiresAt: 'venceEn',
       ipAddress: 'ip',
