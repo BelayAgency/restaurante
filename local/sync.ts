@@ -129,16 +129,33 @@ async function traerCatalogo(dispositivoId: string) {
   const respuesta = await fetch(`/api/sync/catalogo?dispositivo=${dispositivoId}`, { cache: 'no-store' });
   if (!respuesta.ok) return;
   const catalogo = (await respuesta.json()) as Catalogo;
-  // Demo: la base del servidor vive en memoria y vuelve a los datos de prueba al reiniciarse.
-  // Lo que este navegador tenía del salón habla de otra base: se tira y se trae de cero.
+  // Demo: la base del servidor vive en memoria, y cada instancia de Vercel tiene la suya. Al
+  // caer en otra, lo que este navegador hizo sobre los datos de prueba se le vuelve a mandar
+  // (los ids son los mismos: si ya los tenía, no duplica nada). El navegador es el dueño de su
+  // salón; nada se borra de la pantalla. Lo de otros navegadores vuelve cuando ellos lo manden.
   const conocida = await leerAjuste('instancia');
   if (catalogo.instancia && conocida !== catalogo.instancia) {
-    if (conocida) {
-      await baseLocal.transaction('rw', baseLocal.pendientes, baseLocal.confirmados, baseLocal.rechazados, baseLocal.ajustes, async () => {
+    if (conocida && catalogo.secuenciaBase !== undefined) {
+      const desde = catalogo.secuenciaBase;
+      await baseLocal.transaction('rw', baseLocal.pendientes, baseLocal.confirmados, baseLocal.ajustes, async () => {
+        const posteriores = await baseLocal.confirmados.where('secuencia').above(desde).sortBy('secuencia');
+        const pendientes = await baseLocal.pendientes.orderBy('orden').toArray();
+        const propios = posteriores
+          .filter((e) => e.dispositivoId === dispositivoId)
+          .map((confirmado) => {
+            const evento: Partial<EventoConfirmado> = { ...confirmado };
+            delete evento.secuencia;
+            delete evento.recibidoEn;
+            return evento as EventoNuevo;
+          });
+        // Primero lo ya confirmado, en su orden; detrás, lo que estaba esperando.
         await baseLocal.pendientes.clear();
-        await baseLocal.confirmados.clear();
-        await baseLocal.rechazados.clear();
-        await guardarAjuste('cursor', null);
+        await baseLocal.pendientes.bulkAdd([
+          ...propios.map((evento, i) => ({ id: evento.id, orden: i + 1, evento, intentos: 0, ultimoError: null })),
+          ...pendientes.map((p, i) => ({ ...p, orden: propios.length + i + 1 })),
+        ]);
+        await baseLocal.confirmados.where('secuencia').above(desde).delete();
+        await guardarAjuste('cursor', String(desde));
       });
     }
     await guardarAjuste('instancia', catalogo.instancia);

@@ -28,3 +28,13 @@ global_.baseDemo = base;
 export const instanciaBase = (global_.instanciaDemo ??= crypto.randomUUID());
 
 export const db = drizzle(base, { schema: esquema });
+
+/**
+ * El último evento de los datos de prueba, leído antes de cualquier escritura:
+ * lo que viene después lo creó alguien en esta instancia. Un navegador que
+ * llega con eventos propios posteriores a éste los vuelve a mandar.
+ */
+type GlobalBase = { secuenciaBaseDemo?: Promise<number> };
+export const secuenciaBase = ((globalThis as GlobalBase).secuenciaBaseDemo ??= base
+  .query<{ max: number | null }>('select max(secuencia)::int as max from eventos')
+  .then((r) => r.rows[0]?.max ?? 0));

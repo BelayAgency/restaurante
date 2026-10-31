@@ -109,6 +109,8 @@ export interface Catalogo {
   reglas: Partial<ReglasAutorizacion>;
   /** Demo: identifica la base en memoria; si cambia, el navegador tira su copia del salón. */
   instancia?: string;
+  /** Demo: la última secuencia de los datos de prueba; lo posterior es de los navegadores. */
+  secuenciaBase?: number;
 }
 
 export const CATALOGO_VACIO: Catalogo = {
