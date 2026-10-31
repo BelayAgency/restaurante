@@ -1,6 +1,6 @@
 import 'server-only';
 import { and, asc, eq, isNull } from 'drizzle-orm';
-import { db } from '@/db/cliente';
+import { db, instanciaBase } from '@/db/cliente';
 import {
   categorias,
   elementosPlano,
@@ -82,6 +82,7 @@ export async function leerCatalogo(): Promise<Catalogo> {
     grupos: [...grupos.values()],
     medios: filasMedios,
     motivos: filasMotivos.filter((m) => esAccionAutorizable(m.accion)).map((m) => ({ id: m.id, accion: m.accion as AccionAutorizable, texto: m.texto })),
+    instancia: instanciaBase,
     reglas: Object.fromEntries(filasReglas.filter((r) => esAccionAutorizable(r.accion)).map((r) => [r.accion, r.roles.filter(esRol)])),
   };
 }

@@ -9,7 +9,10 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   // Traen archivos propios (fuentes, wasm): se cargan como vienen, sin pasar por el bundler.
-  serverExternalPackages: ['@react-pdf/renderer', 'exceljs'],
+  serverExternalPackages: ['@react-pdf/renderer', 'exceljs', '@electric-sql/pglite'],
+  // La base de la demo y los archivos de PGlite (wasm y datos de Postgres) se leen del disco
+  // en tiempo de ejecución: sin esto, Vercel no los copia a la función.
+  outputFileTracingIncludes: { '/**': ['./demo/base.tar.gz', './node_modules/@electric-sql/pglite/dist/**'] },
   cacheComponents: true,
   partialPrefetching: true,
   env: { NEXT_PUBLIC_ID_BUILD: idBuild },

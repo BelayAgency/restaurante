@@ -1,19 +1,30 @@
 import 'server-only';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
 import * as esquema from './esquema';
-import { urlBase } from './url';
 
-// Una sola pool por proceso: en dev, el recargado en caliente reevalúa el
-// módulo y sin esto se abren conexiones nuevas en cada guardado.
-const global_ = globalThis as unknown as { poolRestaurante?: Pool };
+/**
+ * Demo: Postgres embebido en el proceso (PGlite), sin servidor de base. Cada
+ * instancia arranca desde demo/base.tar.gz, que arma el build con los datos de
+ * prueba; lo que se cambie vive en memoria hasta que la instancia se apaga.
+ * PGlite encola las consultas hasta terminar de cargar, así que `db` se puede
+ * usar desde el primer momento.
+ */
 
-const pool =
-  global_.poolRestaurante ??
-  // En Vercel cada función es un proceso aparte: con 10 por cada una se agota enseguida el
-  // tope de conexiones de la base gratuita. Ahí va por el pooler de Neon, con pocas.
-  new Pool({ connectionString: urlBase(), max: process.env.VERCEL ? 3 : 10 });
+const global_ = globalThis as unknown as { baseDemo?: PGlite; instanciaDemo?: string };
 
-if (process.env.NODE_ENV !== 'production') global_.poolRestaurante = pool;
+export const base =
+  global_.baseDemo ??
+  new PGlite({ loadDataDir: new Blob([readFileSync(path.join(process.cwd(), 'demo/base.tar.gz'))]) });
+global_.baseDemo = base;
 
-export const db = drizzle(pool, { schema: esquema });
+/**
+ * Cambia cada vez que arranca una base nueva. Los navegadores la comparan con
+ * la que conocían: si es otra, tiran su copia del salón, que hablaba de una
+ * base que ya no existe.
+ */
+export const instanciaBase = (global_.instanciaDemo ??= crypto.randomUUID());
+
+export const db = drizzle(base, { schema: esquema });

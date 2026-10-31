@@ -107,6 +107,8 @@ export interface Catalogo {
   medios: MedioPago[];
   motivos: MotivoAutorizacion[];
   reglas: Partial<ReglasAutorizacion>;
+  /** Demo: identifica la base en memoria; si cambia, el navegador tira su copia del salón. */
+  instancia?: string;
 }
 
 export const CATALOGO_VACIO: Catalogo = {

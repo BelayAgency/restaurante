@@ -123,6 +123,20 @@ async function traerCatalogo(dispositivoId: string) {
   const respuesta = await fetch(`/api/sync/catalogo?dispositivo=${dispositivoId}`, { cache: 'no-store' });
   if (!respuesta.ok) return;
   const catalogo = (await respuesta.json()) as Catalogo;
+  // Demo: la base del servidor vive en memoria y vuelve a los datos de prueba al reiniciarse.
+  // Lo que este navegador tenía del salón habla de otra base: se tira y se trae de cero.
+  const conocida = await leerAjuste('instancia');
+  if (catalogo.instancia && conocida !== catalogo.instancia) {
+    if (conocida) {
+      await baseLocal.transaction('rw', baseLocal.pendientes, baseLocal.confirmados, baseLocal.rechazados, baseLocal.ajustes, async () => {
+        await baseLocal.pendientes.clear();
+        await baseLocal.confirmados.clear();
+        await baseLocal.rechazados.clear();
+        await guardarAjuste('cursor', null);
+      });
+    }
+    await guardarAjuste('instancia', catalogo.instancia);
+  }
   await baseLocal.transaction('rw', baseLocal.operadores, baseLocal.catalogo, async () => {
     await baseLocal.operadores.clear();
     await baseLocal.operadores.bulkPut(catalogo.operadores);
@@ -140,9 +154,11 @@ export function sincronizar(): Promise<void> {
     }
     actualizar({ sincronizando: true });
     try {
+      // El catálogo primero: trae la instancia de la base, y si cambió no hay que mandar ni
+      // traer nada contra la copia vieja.
+      await traerCatalogo(dispositivoId);
       await enviar(dispositivoId);
       await traer(dispositivoId);
-      await traerCatalogo(dispositivoId);
       const contacto = new Date().toISOString();
       await guardarAjuste('contacto', contacto);
       actualizar({ enLinea: true, ultimoContacto: contacto, problema: estado.problema === 'suspendido' ? null : estado.problema });

@@ -44,3 +44,6 @@ next-env.d.ts
 /scripts/dist
 
 !.env.example
+
+# Demo: la arma el build (scripts/armar-demo.mjs)
+/demo/base.tar.gz
