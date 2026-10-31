@@ -6,10 +6,8 @@ import { ejecutar, exigirSesion, ipCliente } from '@/lib/sesion';
 import {
   guardarFotoInsumo,
   guardarProveedor,
+  ingresarStock,
   quitarFotoInsumo,
-  registrarProduccion,
-  registrarSalida,
-  transferir,
 } from '@/servidor/stock';
 import { guardarFotoProducto, quitarFotoProducto } from '@/servidor/carta';
 import { archivarProductoConReceta, archivarProductoConStock, guardarProductoConReceta, guardarProductoConStock } from '@/servidor/productos';
@@ -53,25 +51,15 @@ export async function accionQuitarFotoInsumo(id: unknown) {
   return conActor('stock.administrar', (actor, ip) => quitarFotoInsumo(actor, z.uuid().parse(id), ip));
 }
 
-export async function accionRegistrarProduccion(datos: unknown) {
-  const esquema = z.object({ preparacionId: z.uuid('Elegí la preparación'), cantidad: positivo, depositoId: z.uuid('Elegí el depósito') });
-  return conActor('stock.administrar', (actor, ip) => registrarProduccion(actor, esquema.parse(datos), ip));
-}
-
-export async function accionRegistrarSalida(datos: unknown) {
+export async function accionIngresarStock(datos: unknown) {
   const esquema = z.object({
-    tipo: z.enum(['merma', 'vencimiento', 'comida_personal']),
-    insumoId: z.uuid('Elegí el insumo'),
-    depositoId: z.uuid('Elegí el depósito'),
-    cantidad: positivo,
-    motivo: z.string().trim().min(3, 'El motivo es obligatorio').max(140),
+    lineas: z
+      .array(z.object({ insumoId: z.uuid(), cantidad: positivo }))
+      .min(1, 'Agregá al menos un producto')
+      .max(100)
+      .refine((l) => new Set(l.map((x) => x.insumoId)).size === l.length, 'Hay un producto repetido'),
   });
-  return conActor('stock.administrar', (actor, ip) => registrarSalida(actor, esquema.parse(datos), ip));
-}
-
-export async function accionTransferir(datos: unknown) {
-  const esquema = z.object({ insumoId: z.uuid('Elegí el insumo'), desdeId: z.uuid('Elegí el origen'), haciaId: z.uuid('Elegí el destino'), cantidad: positivo });
-  return conActor('stock.administrar', (actor, ip) => transferir(actor, esquema.parse(datos), ip));
+  return conActor('stock.administrar', (actor, ip) => ingresarStock(actor, esquema.parse(datos), ip));
 }
 
 const venta = z

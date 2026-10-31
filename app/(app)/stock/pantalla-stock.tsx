@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { ArrowLeftRight, Factory, Package, PackageMinus, Search, Truck } from 'lucide-react';
+import { Package, PackagePlus, Search } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { Miniatura } from '@/components/foto-producto';
 import { NivelStock } from '@/components/nivel-stock';
@@ -13,7 +13,7 @@ import type { Productos } from '@/servidor/productos';
 import type { Stock } from '@/servidor/stock';
 import { useSesion } from '../sesion-cliente';
 import { ModalProducto } from './modal-producto';
-import { ModalMovimiento, type Movimiento } from './modales-movimiento';
+import { ModalIngreso } from './modal-ingreso';
 
 type Insumo = Stock['insumos'][number];
 
@@ -38,7 +38,7 @@ export function PantallaStock({
   const administra = puede(usuario, 'stock.administrar');
   const [abiertoId, setAbiertoId] = useState<string | null>(null);
   const abierto = productos?.conStock.find((p) => p.id === abiertoId);
-  const [movimiento, setMovimiento] = useState<Movimiento | null>(null);
+  const [ingresando, setIngresando] = useState(false);
   const bajos = stock.insumos.filter((i) => i.bajoMinimo).length;
   const nivel = (i: Insumo) => (
     <NivelStock cantidad={i.total} minimo={i.stockMinimo} texto={formatearConUnidades(i.total, i.unidad, i.contenidoPorUnidad)} textoMinimo={formatearCantidad(i.stockMinimo, i.unidad)} />
@@ -50,20 +50,9 @@ export function PantallaStock({
         descripcion={bajos ? `${bajos} ${bajos === 1 ? 'insumo está' : 'insumos están'} por debajo del mínimo.` : undefined}
         accion={
           administra ? (
-            <div className="flex flex-wrap gap-2">
-              <Boton variante="secundario" tamano="sm" onClick={() => setMovimiento('produccion')}>
-                <Factory size={14} strokeWidth={1.5} /> Producción
-              </Boton>
-              <Boton variante="secundario" tamano="sm" onClick={() => setMovimiento('transferencia')}>
-                <ArrowLeftRight size={14} strokeWidth={1.5} /> Transferir
-              </Boton>
-              <Boton variante="secundario" tamano="sm" onClick={() => setMovimiento('baja')}>
-                <PackageMinus size={14} strokeWidth={1.5} /> Baja
-              </Boton>
-              <Boton variante="secundario" tamano="sm" onClick={() => setMovimiento('proveedor')}>
-                <Truck size={14} strokeWidth={1.5} /> Proveedor
-              </Boton>
-            </div>
+            <Boton variante="primario" tamano="sm" onClick={() => setIngresando(true)}>
+              <PackagePlus size={14} strokeWidth={1.5} /> Añadir stock
+            </Boton>
           ) : null
         }
       >
@@ -128,7 +117,7 @@ export function PantallaStock({
       </div>
 
       {abierto && productos ? <ModalProducto key={abierto.id} abierto={{ tipo: 'stock', producto: abierto }} productos={productos} alCerrar={() => setAbiertoId(null)} /> : null}
-      {movimiento ? <ModalMovimiento tipo={movimiento} stock={stock} alCerrar={() => setMovimiento(null)} /> : null}
+      {ingresando ? <ModalIngreso stock={stock} alCerrar={() => setIngresando(false)} /> : null}
     </>
   );
 }

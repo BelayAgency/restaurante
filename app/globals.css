@@ -552,7 +552,7 @@
   }
 
   .modal-encabezado {
-    @apply flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-5;
+    @apply flex shrink-0 items-start justify-between gap-4 px-6 pb-3 pt-5;
   }
 
   /* Scroll del contenido, no del modal entero. */
@@ -560,9 +560,13 @@
    * El `pb-5` es del cuerpo y no del pie: el pie tiene su propio `pt-4`, pero
    * ese aire queda del lado de afuera de la línea divisoria. Sin esto, el
    * último elemento del formulario termina pegado al borde.
+   *
+   * Arriba, `pt-1` (que sale del `pb` del encabezado, así la distancia no cambia): el scroll
+   * propio recorta todo lo que asoma del cuerpo, y un campo puesto primero perdía el borde
+   * de arriba de su anillo de foco.
    */
   .modal-cuerpo {
-    @apply min-h-0 flex-1 overflow-y-auto px-6 pb-5;
+    @apply min-h-0 flex-1 overflow-y-auto px-6 pb-5 pt-1;
   }
 
   .modal-pie {

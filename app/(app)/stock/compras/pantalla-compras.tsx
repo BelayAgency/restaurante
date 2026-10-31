@@ -2,7 +2,7 @@
 
 import { startTransition, useOptimistic, useState, type ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Paperclip, Plus, Wallet } from 'lucide-react';
+import { FileText, Paperclip, Plus, Truck, Wallet } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { Tabs } from '@/components/tabs';
 import { EstadoVacio, Metrica, Tabla, Tarjeta, Td, Th } from '@/components/ui';
@@ -15,6 +15,7 @@ import { FichaFactura } from './ficha-factura';
 import { ModalComprobante } from './modal-comprobante';
 import { ModalCuenta } from './modal-cuenta';
 import { ModalPago } from './modal-pago';
+import { ModalProveedor } from './modal-proveedor';
 
 interface Props {
   vista: 'facturas' | 'proveedores';
@@ -40,6 +41,7 @@ export function PantallaCompras({ vista, resumen, listado, cuentas, stock, filtr
   const [vistaVisible, setVistaVisible] = useOptimistic(vista);
   const [cargando, setCargando] = useState(false);
   const [pagando, setPagando] = useState(false);
+  const [nuevoProveedor, setNuevoProveedor] = useState(false);
   const [fichaId, setFichaId] = useState<string | null>(null);
   const [cuentaId, setCuentaId] = useState<string | null>(null);
   const proveedores = stock.proveedores.map((p) => ({ id: p.id, nombre: p.nombre }));
@@ -81,6 +83,9 @@ export function PantallaCompras({ vista, resumen, listado, cuentas, stock, filtr
           parejas
         />
         <div className="flex flex-wrap gap-2">
+          <Boton variante="secundario" onClick={() => setNuevoProveedor(true)}>
+            <Truck size={15} strokeWidth={1.5} /> Proveedor
+          </Boton>
           <Boton variante="secundario" onClick={() => setPagando(true)}>
             <Wallet size={15} strokeWidth={1.5} /> Registrar pago
           </Boton>
@@ -200,6 +205,7 @@ export function PantallaCompras({ vista, resumen, listado, cuentas, stock, filtr
       ) : null}
 
       {cargando ? <ModalComprobante stock={stock} alCerrar={() => setCargando(false)} /> : null}
+      {nuevoProveedor ? <ModalProveedor alCerrar={() => setNuevoProveedor(false)} /> : null}
       {pagando ? <ModalPago proveedores={proveedores} proveedorInicial={null} alCerrar={() => setPagando(false)} /> : null}
       {fichaId ? <FichaFactura id={fichaId} proveedores={proveedores} alCerrar={() => setFichaId(null)} /> : null}
       {cuentaId ? <ModalCuenta proveedorId={cuentaId} proveedores={proveedores} stock={stock} alCerrar={() => setCuentaId(null)} /> : null}
