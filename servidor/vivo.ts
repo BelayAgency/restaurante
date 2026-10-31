@@ -1,5 +1,6 @@
 import 'server-only';
 import { Client } from 'pg';
+import { urlBase } from '@/db/url';
 
 /**
  * Una sola conexión LISTEN por proceso, repartida entre todos los navegadores
@@ -14,7 +15,7 @@ const oyentes = (estado.oyentesEventos ??= new Set());
 
 function conectar(): Promise<Client> {
   // LISTEN necesita una conexión directa: el pooler de Neon (modo transacción) no reparte avisos.
-  const cliente = new Client({ connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL });
+  const cliente = new Client({ connectionString: urlBase({ directa: true }) });
   const conexion = cliente.connect().then(async () => {
     await cliente.query('LISTEN eventos_nuevos');
     cliente.on('notification', (aviso) => {

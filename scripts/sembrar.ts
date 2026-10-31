@@ -2,6 +2,7 @@ import { hash } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
+import { urlBase } from '../db/url';
 import { cuentasAuth, usuarios } from '../db/esquema';
 
 // Una sola vez, con la base vacía o sin soporte. En producción la contraseña
@@ -10,7 +11,7 @@ const EMAIL = 'info@belay.agency';
 const CONTRASENA_INICIAL = 'Soporte2026!';
 
 async function sembrar(): Promise<void> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL, max: 1 });
+  const pool = new Pool({ connectionString: urlBase({ directa: true }), max: 1 });
   const db = drizzle(pool);
   try {
     const [existente] = await db.select({ id: usuarios.id }).from(usuarios).where(eq(usuarios.email, EMAIL));

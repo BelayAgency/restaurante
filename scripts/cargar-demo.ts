@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { hash } from '@node-rs/argon2';
 import { Client } from 'pg';
+import { urlBase } from '../db/url';
 
 /**
  * Sólo para la rama de demo: con la base recién migrada y vacía, la llena con
@@ -16,7 +17,7 @@ const EMAIL_ADMIN = 'info@belay.agency';
 
 async function cargar(): Promise<void> {
   // Directa y no por el pooler: un volcado son miles de sentencias en una sola transacción.
-  const cliente = new Client({ connectionString: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL });
+  const cliente = new Client({ connectionString: urlBase({ directa: true }) });
   await cliente.connect();
   try {
     const { rows } = await cliente.query<{ cantidad: string }>('select count(*) as cantidad from usuarios');
