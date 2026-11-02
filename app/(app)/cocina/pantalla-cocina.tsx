@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useTransition, type ReactNode } from 'react';
-import { CheckCheck, ChefHat, CloudOff, MessageSquareText, RotateCcw, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
+import { Check, CheckCheck, ChefHat, CloudOff, MessageSquareText, RotateCcw, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { CargandoTarjeta } from '@/components/carga';
 import { Selector } from '@/components/selector';
@@ -70,28 +70,31 @@ function urgenciaDe(comanda: Comanda, ahora: number): Urgencia {
   return minutosDesde(comanda.enviadaEn, ahora) >= MINUTOS_ATENCION ? 'atencion' : 'normal';
 }
 
+type Origen = { titulo: string; icono: ReactNode; mozo: string; comensales: number | null };
+
 /** De dónde viene la comanda: la mesa, o el nombre del pedido sin mesa. */
-function origenDe(comanda: Comanda, salon: EstadoSalon, catalogo: Catalogo): { titulo: string; icono: ReactNode; mozo: string } {
+function origenDe(comanda: Comanda, salon: EstadoSalon, catalogo: Catalogo): Origen {
   const cuenta = salon.cuentas.get(comanda.cuentaId);
   const mozo = nombreOperador(catalogo, cuenta?.mozoId ?? comanda.enviadaPor);
-  if (!cuenta) return { titulo: 'Cuenta', icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo };
-  if (cuenta.tipo === 'mesa') return { titulo: nombreMesa(catalogo, cuenta.mesaId), icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo };
-  if (cuenta.tipo === 'llevar') return { titulo: cuenta.nombre ?? 'Para llevar', icono: <ShoppingBag size={16} strokeWidth={1.75} />, mozo };
-  return { titulo: cuenta.nombre ?? 'Mostrador', icono: <Store size={16} strokeWidth={1.75} />, mozo };
+  const comensales = cuenta?.comensales ?? null;
+  if (!cuenta) return { titulo: 'Cuenta', icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo, comensales };
+  if (cuenta.tipo === 'mesa') return { titulo: nombreMesa(catalogo, cuenta.mesaId), icono: <UtensilsCrossed size={16} strokeWidth={1.75} />, mozo, comensales };
+  if (cuenta.tipo === 'llevar') return { titulo: cuenta.nombre ?? 'Para llevar', icono: <ShoppingBag size={16} strokeWidth={1.75} />, mozo, comensales };
+  return { titulo: cuenta.nombre ?? 'Mostrador', icono: <Store size={16} strokeWidth={1.75} />, mozo, comensales };
 }
 
 /** Un renglón del ticket: cantidad y plato, y debajo, chico, lo que cambia cómo se prepara. */
 function FilaItemComanda({ item }: { item: ItemComanda }) {
   return (
     <li className="py-0.5">
-      <p className={cn('flex gap-1.5 text-sm leading-5', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>
-        <span className="shrink-0 font-semibold tabular-nums">{item.cantidad} ×</span>
-        <span className="min-w-0 font-medium">{item.nombre}</span>
+      <p className={cn('flex gap-2 text-sm font-medium leading-5', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>
+        <span className="min-w-5 shrink-0 font-bold tabular-nums">{item.cantidad}</span>
+        <span className="min-w-0">{item.nombre}</span>
       </p>
-      {item.anulado ? <p className="pl-6 text-xs font-medium text-error">Anulado: no preparar</p> : null}
-      {item.modificadores.length ? <p className="pl-6 text-xs text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
+      {item.anulado ? <p className="pl-7 text-xs font-medium text-error">Anulado: no preparar</p> : null}
+      {item.modificadores.length ? <p className="pl-7 text-xs text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
       {item.nota ? (
-        <p className="ml-6 mt-0.5 flex items-start gap-1 rounded bg-alerta-tenue px-1.5 py-0.5 text-xs text-alerta">
+        <p className="ml-7 mt-0.5 inline-flex items-start gap-1 rounded bg-alerta-tenue px-1.5 py-px text-xs font-medium text-alerta">
           <MessageSquareText size={12} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
         </p>
       ) : null}
@@ -99,25 +102,31 @@ function FilaItemComanda({ item }: { item: ItemComanda }) {
   );
 }
 
-/** Una comanda dentro del ticket de su mesa: estación, hora, tiempo y su «Listo» en una línea; abajo, los platos. */
-function BloqueComanda({ comanda, estacion, ahora, operador }: { comanda: Comanda; estacion: string | null; ahora: number; operador: Operador }) {
-  const registrar = useRegistrar(operador);
-  const [ocupado, iniciar] = useTransition();
-  const urgencia = urgenciaDe(comanda, ahora);
-  const terminar = () => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, { envioId: comanda.envioId, estacionId: comanda.estacionId })));
-
+/** Lo que una estación tiene que sacar de esta mesa: su rótulo, su «Listo» propio si hay más de una, y los platos. */
+function BloqueComanda({
+  comanda,
+  estacion,
+  ocupado,
+  alTerminar,
+}: {
+  comanda: Comanda;
+  estacion: string | null;
+  ocupado: boolean;
+  alTerminar: (() => void) | null;
+}) {
   return (
-    // Corte punteado entre comandas, como un ticket.
-    <section className="border-b border-dashed border-borde-fuerte px-3 py-2 last:border-0">
-      <div className="flex items-center gap-2 text-xs text-tinta-tenue">
-        {estacion ? <span className="font-medium uppercase tracking-wide text-tinta-suave">{estacion}</span> : null}
-        <span className="tabular-nums">{hora(comanda.enviadaEn)}</span>
-        <span className={cn('whitespace-nowrap font-semibold tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</span>
-        <Boton variante="primario" tamano="sm" className="ml-auto" disabled={ocupado} onClick={terminar}>
-          <CheckCheck size={14} strokeWidth={1.5} /> Listo
-        </Boton>
-      </div>
-      <ul className="mt-1">
+    <section className="pt-1.5">
+      {estacion || alTerminar ? (
+        <div className="flex min-h-8 items-center justify-between gap-2 pl-3 pr-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-tinta-tenue">{estacion}</span>
+          {alTerminar ? (
+            <Boton tamano="sm" className="h-7 text-xs" disabled={ocupado} onClick={alTerminar}>
+              <Check size={14} strokeWidth={2} /> Listo
+            </Boton>
+          ) : null}
+        </div>
+      ) : null}
+      <ul className="px-3">
         {comanda.items.map((item) => (
           <FilaItemComanda key={item.id} item={item} />
         ))}
@@ -128,7 +137,7 @@ function BloqueComanda({ comanda, estacion, ahora, operador }: { comanda: Comand
 
 /**
  * El ticket de una mesa: todo lo pendiente junto, para que la cocina vea qué sale a la vez.
- * Cada comanda (un envío a una estación) sigue con su propio «Listo», porque se termina por separado.
+ * Cada estación conserva su «Listo» porque se termina por separado; el del pie cierra todas.
  */
 function TarjetaMesa({
   comandas,
@@ -138,31 +147,53 @@ function TarjetaMesa({
   operador,
 }: {
   comandas: Comanda[];
-  origen: { titulo: string; icono: ReactNode; mozo: string };
+  origen: Origen;
   nombreEstacion: (id: string) => string | null;
   ahora: number;
   operador: Operador;
 }) {
+  const registrar = useRegistrar(operador);
+  const [ocupado, iniciar] = useTransition();
   // La urgencia de la mesa es la de su comanda más vieja.
   const primera = comandas[0]!;
   const urgencia = urgenciaDe(primera, ahora);
+  const terminar = (lista: Comanda[]) =>
+    iniciar(async () => {
+      for (const c of lista) if (!(await registrar('comanda_lista', c.cuentaId, { envioId: c.envioId, estacionId: c.estacionId }))) return;
+    });
+  const varias = comandas.length > 1;
 
   return (
-    // Borde visible: el encabezado pinta hasta el canto y, con el borde transparente de la tarjeta, se perdía el contorno.
     <article className="tarjeta flex flex-col overflow-hidden border-borde">
-      <header className={cn('border-b border-borde px-3 py-2', BANDA[urgencia])}>
-        <div className="flex items-center gap-2">
-          <span className="text-tinta-tenue">{origen.icono}</span>
-          <p className="min-w-0 flex-1 truncate text-base font-semibold text-tinta">{origen.titulo}</p>
-          <p className={cn('shrink-0 text-lg font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(primera.enviadaEn, ahora))}</p>
+      <header className={cn('border-b border-borde px-3 py-2.5', BANDA[urgencia])}>
+        <div className="flex items-baseline gap-2">
+          <p className="min-w-0 flex-1 truncate text-[17px] font-semibold text-tinta">{origen.titulo}</p>
+          <p className={cn('shrink-0 whitespace-nowrap text-[17px] font-semibold tabular-nums', TIEMPO[urgencia])}>
+            {duracionCorta(minutosDesde(primera.enviadaEn, ahora))}
+          </p>
         </div>
         <p className="truncate text-xs text-tinta-suave">
-          {origen.mozo} · desde {hora(primera.enviadaEn)}
+          {[origen.mozo === '—' ? null : origen.mozo, `desde ${hora(primera.enviadaEn)}`, origen.comensales ? `${origen.comensales} ${origen.comensales === 1 ? 'comensal' : 'comensales'}` : null]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </header>
-      {comandas.map((c) => (
-        <BloqueComanda key={c.clave} comanda={c} estacion={nombreEstacion(c.estacionId)} ahora={ahora} operador={operador} />
-      ))}
+      <div className="pb-1">
+        {comandas.map((c) => (
+          <BloqueComanda
+            key={c.clave}
+            comanda={c}
+            estacion={nombreEstacion(c.estacionId)}
+            ocupado={ocupado}
+            alTerminar={varias ? () => terminar([c]) : null}
+          />
+        ))}
+      </div>
+      <div className="px-3 pb-3 pt-2">
+        <Boton variante="primario" ancho className="h-10" disabled={ocupado} onClick={() => terminar(comandas)}>
+          <CheckCheck size={16} strokeWidth={1.75} /> {varias ? 'Todo listo' : 'Listo'}
+        </Boton>
+      </div>
     </article>
   );
 }
@@ -176,7 +207,7 @@ function Carril({ titulo, cantidad, vacio, children }: { titulo: string; cantida
       </h2>
       {cantidad ? (
         // Tickets angostos y cada uno de su alto: en una fila no se estiran al más largo.
-        <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))]">{children}</div>
+        <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">{children}</div>
       ) : (
         <p className="rounded-xl border border-dashed border-borde px-4 py-6 text-center text-sm text-tinta-tenue">{vacio}</p>
       )}
