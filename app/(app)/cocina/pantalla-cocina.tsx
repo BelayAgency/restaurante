@@ -24,8 +24,9 @@ const MINUTOS_ATENCION = 10;
 
 type Urgencia = 'normal' | 'atencion' | 'demorada';
 
+// Sin urgencia, el tono elevado: el lienzo es el mismo fondo de la página y el encabezado no se distinguía.
 const BANDA: Record<Urgencia, string> = {
-  normal: 'bg-lienzo',
+  normal: 'bg-elevada',
   atencion: 'bg-alerta-tenue',
   demorada: 'bg-error-tenue',
 };
@@ -112,60 +113,80 @@ function FilaItemComanda({ item }: { item: ItemComanda }) {
   );
 }
 
-function TarjetaComanda({
-  comanda,
-  origen,
-  estacion,
-  ahora,
-  operador,
-}: {
-  comanda: Comanda;
-  origen: { titulo: string; icono: ReactNode; mozo: string };
-  /** El nombre de la estación, sólo cuando se están viendo todas. */
-  estacion: string | null;
-  ahora: number;
-  operador: Operador;
-}) {
+/** Una comanda dentro de la tarjeta de su mesa: su estación, cuándo entró, qué lleva y su «Listo». */
+function BloqueComanda({ comanda, estacion, ahora, operador }: { comanda: Comanda; estacion: string | null; ahora: number; operador: Operador }) {
   const registrar = useRegistrar(operador);
   const [ocupado, iniciar] = useTransition();
   const urgencia = urgenciaDe(comanda, ahora);
-  const datos = { envioId: comanda.envioId, estacionId: comanda.estacionId };
   const aPreparar = comanda.items.filter((i) => !i.anulado).reduce((s, i) => s + i.cantidad, 0);
-  const terminar = () => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, datos)));
+  const terminar = () => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, { envioId: comanda.envioId, estacionId: comanda.estacionId })));
 
   return (
-    <article className="tarjeta flex flex-col overflow-hidden">
-      <header className={cn('flex items-start justify-between gap-3 px-4 py-3', BANDA[urgencia])}>
+    <section className="border-b border-borde px-4 py-3 last:border-0">
+      <p className="flex items-baseline gap-2 text-xs text-tinta-tenue">
+        {estacion ? <span className="font-medium text-tinta-suave">{estacion}</span> : null}
+        <span className="tabular-nums">Entró {hora(comanda.enviadaEn)}</span>
+        <span className={cn('ml-auto text-sm font-semibold tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</span>
+      </p>
+      <ul className="py-1">
+        {comanda.items.map((item) => (
+          <FilaItemComanda key={item.id} item={item} />
+        ))}
+      </ul>
+      <div className="flex items-center gap-2">
+        <span className="mr-auto text-xs text-tinta-tenue">
+          {aPreparar} {aPreparar === 1 ? 'plato' : 'platos'}
+        </span>
+        <Boton variante="primario" tamano="sm" disabled={ocupado} onClick={terminar}>
+          <CheckCheck size={14} strokeWidth={1.5} /> Listo
+        </Boton>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Todo lo pendiente de una mesa en una sola tarjeta: la cocina ve qué sale junto. Cada comanda
+ * (un envío a una estación) sigue con su propio «Listo», porque se termina por separado.
+ */
+function TarjetaMesa({
+  comandas,
+  origen,
+  nombreEstacion,
+  ahora,
+  operador,
+}: {
+  comandas: Comanda[];
+  origen: { titulo: string; icono: ReactNode; mozo: string };
+  nombreEstacion: (id: string) => string | null;
+  ahora: number;
+  operador: Operador;
+}) {
+  // La urgencia de la mesa es la de su comanda más vieja.
+  const primera = comandas[0]!;
+  const urgencia = urgenciaDe(primera, ahora);
+
+  return (
+    // Borde visible: el encabezado pinta hasta el canto y, con el borde transparente de la tarjeta, se perdía el contorno.
+    <article className="tarjeta flex flex-col overflow-hidden border-borde">
+      <header className={cn('flex items-start justify-between gap-3 border-b border-borde px-4 py-3', BANDA[urgencia])}>
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-lg font-semibold text-tinta">
             <span className="text-tinta-tenue">{origen.icono}</span>
             <span className="truncate">{origen.titulo}</span>
           </p>
           <p className="truncate text-xs text-tinta-suave">
-            {origen.mozo}
-            {estacion ? ` · ${estacion}` : ''}
+            {origen.mozo} · {comandas.length} {comandas.length === 1 ? 'comanda' : 'comandas'}
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className={cn('text-2xl font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</p>
-          <p className="mt-1 text-xs tabular-nums text-tinta-tenue">Entró {hora(comanda.enviadaEn)}</p>
+          <p className={cn('text-2xl font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(primera.enviadaEn, ahora))}</p>
+          <p className="mt-1 text-xs tabular-nums text-tinta-tenue">Desde {hora(primera.enviadaEn)}</p>
         </div>
       </header>
-
-      <ul className="flex-1 px-4 py-1">
-        {comanda.items.map((item) => (
-          <FilaItemComanda key={item.id} item={item} />
-        ))}
-      </ul>
-
-      <footer className="flex items-center gap-2 border-t border-borde px-4 py-3">
-        <span className="mr-auto text-xs text-tinta-tenue">
-          {aPreparar} {aPreparar === 1 ? 'plato' : 'platos'}
-        </span>
-        <Boton variante="primario" disabled={ocupado} onClick={terminar}>
-          <CheckCheck size={15} strokeWidth={1.5} /> Listo
-        </Boton>
-      </footer>
+      {comandas.map((c) => (
+        <BloqueComanda key={c.clave} comanda={c} estacion={nombreEstacion(c.estacionId)} ahora={ahora} operador={operador} />
+      ))}
     </article>
   );
 }
@@ -223,9 +244,9 @@ export function PantallaCocina() {
   const operador: Operador = catalogo.operadores.find((o) => o.id === operadorId) ?? { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol };
   const nombreEstacion = (id: string) => (estacion === TODAS ? (catalogo.estaciones.find((e) => e.id === id)?.nombre ?? null) : null);
 
-  const tarjeta = (c: Comanda) => (
-    <TarjetaComanda key={c.clave} comanda={c} origen={origenDe(c, salon, catalogo)} estacion={nombreEstacion(c.estacionId)} ahora={ahora} operador={operador} />
-  );
+  // Por mesa: las comandas de una misma cuenta van juntas, en la mesa que primero pidió.
+  const porMesa = new Map<string, Comanda[]>();
+  for (const c of activas) porMesa.set(c.cuentaId, [...(porMesa.get(c.cuentaId) ?? []), c]);
 
   return (
     <div className="contenido-ancho">
@@ -256,8 +277,17 @@ export function PantallaCocina() {
           <EstadoVacio icono={<ChefHat size={28} strokeWidth={1.5} />} titulo="No hay comandas pendientes" />
         </div>
       ) : (
-        <Carril titulo="Sin empezar" cantidad={activas.length} vacio="Nada nuevo">
-          {activas.map(tarjeta)}
+        <Carril titulo="Sin empezar" cantidad={porMesa.size} vacio="Nada nuevo">
+          {[...porMesa.values()].map((comandasDeMesa) => (
+            <TarjetaMesa
+              key={comandasDeMesa[0]!.cuentaId}
+              comandas={comandasDeMesa}
+              origen={origenDe(comandasDeMesa[0]!, salon, catalogo)}
+              nombreEstacion={nombreEstacion}
+              ahora={ahora}
+              operador={operador}
+            />
+          ))}
         </Carril>
       )}
 
