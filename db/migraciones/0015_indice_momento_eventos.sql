@@ -1,0 +1,1 @@
+CREATE INDEX "eventos_momento_idx" ON "eventos" USING btree ("creado_en_dispositivo");

@@ -184,6 +184,8 @@ export const eventos = pgTable(
   (t) => [
     uniqueIndex('eventos_secuencia_idx').on(t.secuencia),
     index('eventos_agregado_idx').on(t.agregadoTipo, t.agregadoId),
+    // Los reportes filtran por período: sin esto, cada uno recorría el log entero.
+    index('eventos_momento_idx').on(t.creadoEnDispositivo),
     index('eventos_rechazados_idx').on(t.recibidoEn).where(sql`${t.resultado} = 'rechazado'`),
   ],
 );

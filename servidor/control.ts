@@ -1,5 +1,6 @@
 import 'server-only';
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { cache } from 'react';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { db } from '@/db/cliente';
 import {
   alertasVistas,
@@ -69,35 +70,28 @@ function aEvento(f: typeof eventos.$inferSelect): EventoNuevo {
  * saber si una anulación fue después de la precuenta hay que ver la cuenta
  * entera, aunque se haya abierto el día anterior.
  */
-export async function eventosDelPeriodo(desde: string, hasta: string) {
+/**
+ * Los eventos de un período y la historia completa de cada cuenta y caja que
+ * tocó el período (una cuenta abierta el día anterior se cobra en éste). Una
+ * sola consulta: las cuentas y cajas las resuelve la base con una subconsulta,
+ * en vez de mandarle cientos de ids. Con `cache`, la página que la pide desde
+ * varios reportes la calcula una vez por pedido.
+ */
+export const eventosDelPeriodo = cache(async (desde: string, hasta: string) => {
   const { inicio, fin } = rango(desde, hasta);
-  const delPeriodo = await db
+  const enPeriodo = and(eq(eventos.resultado, 'aceptado'), gte(eventos.creadoEnDispositivo, inicio), lte(eventos.creadoEnDispositivo, fin));
+  const tocados = db
+    .selectDistinct({ id: eventos.agregadoId })
+    .from(eventos)
+    .where(and(enPeriodo, inArray(eventos.agregadoTipo, ['cuenta', 'turno'])));
+  const filas = await db
     .select()
     .from(eventos)
-    .where(and(eq(eventos.resultado, 'aceptado'), gte(eventos.creadoEnDispositivo, inicio), lte(eventos.creadoEnDispositivo, fin)))
+    .where(and(eq(eventos.resultado, 'aceptado'), or(enPeriodo, and(inArray(eventos.agregadoTipo, ['cuenta', 'turno']), inArray(eventos.agregadoId, tocados)))))
     .orderBy(asc(eventos.secuencia));
-  const cuentas = [...new Set(delPeriodo.filter((e) => e.agregadoTipo === 'cuenta').map((e) => e.agregadoId))];
-  const deCuentas = cuentas.length
-    ? await db
-        .select()
-        .from(eventos)
-        .where(and(eq(eventos.resultado, 'aceptado'), eq(eventos.agregadoTipo, 'cuenta'), inArray(eventos.agregadoId, cuentas)))
-        .orderBy(asc(eventos.secuencia))
-    : [];
-  const turnos = [...new Set(delPeriodo.filter((e) => e.agregadoTipo === 'turno').map((e) => e.agregadoId))];
-  const deTurnos = turnos.length
-    ? await db
-        .select()
-        .from(eventos)
-        .where(and(eq(eventos.resultado, 'aceptado'), eq(eventos.agregadoTipo, 'turno'), inArray(eventos.agregadoId, turnos)))
-        .orderBy(asc(eventos.secuencia))
-    : [];
-  const vistos = new Set<string>();
-  const todos = [...deTurnos, ...deCuentas, ...delPeriodo]
-    .filter((e) => (vistos.has(e.id) ? false : (vistos.add(e.id), true)))
-    .sort((a, b) => a.secuencia - b.secuencia);
-  return { todos: todos.map(aEvento), idsDelPeriodo: new Set(delPeriodo.map((e) => e.id)), inicio, fin };
-}
+  const idsDelPeriodo = new Set(filas.filter((e) => e.creadoEnDispositivo >= inicio && e.creadoEnDispositivo <= fin).map((e) => e.id));
+  return { todos: filas.map(aEvento), idsDelPeriodo, inicio, fin };
+});
 
 export type TipoHecho = 'anulacion' | 'descuento' | 'cortesia' | 'precio' | 'sin_cobrar';
 
