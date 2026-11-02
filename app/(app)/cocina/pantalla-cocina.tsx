@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useTransition, type ReactNode } from 'react';
-import { Check, CheckCheck, ChefHat, CloudOff, MessageSquareText, RotateCcw, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
+import { Check, ChefHat, CloudOff, MessageSquareText, RotateCcw, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
 import { Boton } from '@/components/boton';
 import { CargandoTarjeta } from '@/components/carga';
 import { Selector } from '@/components/selector';
@@ -109,7 +109,7 @@ function FilaItemComanda({ item, accion }: { item: ItemComanda; accion?: ReactNo
  * Lo que una estación tiene que sacar de esta mesa. El «Listo» va en el renglón del primer plato:
  * se termina la comanda entera de esa estación, no un plato suelto.
  */
-function BloqueComanda({ comanda, ocupado, alTerminar }: { comanda: Comanda; ocupado: boolean; alTerminar: (() => void) | null }) {
+function BloqueComanda({ comanda, ocupado, alTerminar }: { comanda: Comanda; ocupado: boolean; alTerminar: () => void }) {
   return (
     <ul className="px-3 pt-1.5 [&+&]:mt-1">
       {comanda.items.map((item, i) => (
@@ -117,7 +117,7 @@ function BloqueComanda({ comanda, ocupado, alTerminar }: { comanda: Comanda; ocu
           key={item.id}
           item={item}
           accion={
-            alTerminar && i === 0 ? (
+            i === 0 ? (
               <Boton tamano="sm" className="-my-1 h-7 text-xs" disabled={ocupado} onClick={alTerminar}>
                 <Check size={14} strokeWidth={2} /> Listo
               </Boton>
@@ -131,7 +131,7 @@ function BloqueComanda({ comanda, ocupado, alTerminar }: { comanda: Comanda; ocu
 
 /**
  * El ticket de una mesa: todo lo pendiente junto, para que la cocina vea qué sale a la vez.
- * Cada estación conserva su «Listo» porque se termina por separado; el del pie cierra todas.
+ * Cada estación tiene su «Listo» porque se termina por separado; con la última, la mesa sale de la pantalla.
  */
 function TarjetaMesa({
   comandas,
@@ -149,11 +149,8 @@ function TarjetaMesa({
   // La urgencia de la mesa es la de su comanda más vieja.
   const primera = comandas[0]!;
   const urgencia = urgenciaDe(primera, ahora);
-  const terminar = (lista: Comanda[]) =>
-    iniciar(async () => {
-      for (const c of lista) if (!(await registrar('comanda_lista', c.cuentaId, { envioId: c.envioId, estacionId: c.estacionId }))) return;
-    });
-  const varias = comandas.length > 1;
+  const terminar = (c: Comanda) =>
+    iniciar(async () => void (await registrar('comanda_lista', c.cuentaId, { envioId: c.envioId, estacionId: c.estacionId })));
 
   return (
     <article className="tarjeta flex flex-col overflow-hidden border-borde">
@@ -170,20 +167,15 @@ function TarjetaMesa({
             .join(' · ')}
         </p>
       </header>
-      <div className="pb-1">
+      <div className="pb-2.5">
         {comandas.map((c) => (
           <BloqueComanda
             key={c.clave}
             comanda={c}
             ocupado={ocupado}
-            alTerminar={varias ? () => terminar([c]) : null}
+            alTerminar={() => terminar(c)}
           />
         ))}
-      </div>
-      <div className="px-3 pb-3 pt-2">
-        <Boton variante="primario" ancho className="h-10" disabled={ocupado} onClick={() => terminar(comandas)}>
-          <CheckCheck size={16} strokeWidth={1.75} /> {varias ? 'Todo listo' : 'Listo'}
-        </Boton>
       </div>
     </article>
   );
