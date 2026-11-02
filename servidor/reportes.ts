@@ -8,7 +8,6 @@ import { importeItem, reducirSalon } from '@/dominio/reductores/salon';
 import { costoPorcion, type UnidadBase } from '@/dominio/stock';
 import { ErrorAcceso, type UsuarioSesion } from '@/lib/sesion';
 import { eventosDelPeriodo } from './control';
-import { eventosAceptados } from './dia';
 
 const DIA = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
 const HORA = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false });
@@ -187,8 +186,10 @@ export async function valorizacionDeStock(actor: UsuarioSesion) {
  */
 export async function cajasDelPeriodo(actor: UsuarioSesion, desde: string, hasta: string) {
   if (!puede(actor, 'reportes.ver')) throw new ErrorAcceso(403, 'No tenés permiso');
-  const [log, medios, personas] = await Promise.all([
-    eventosAceptados(['turno', 'cuenta']),
+  // Las cajas que abrieron en el período salen de los mismos eventos que el resto de los
+  // reportes (ya traen la historia completa de cada caja y cuenta que tocaron el período).
+  const [{ todos: log }, medios, personas] = await Promise.all([
+    eventosDelPeriodo(desde, hasta),
     db.select({ id: mediosPago.id, nombre: mediosPago.nombre, efectivo: mediosPago.efectivo }).from(mediosPago),
     db.select({ id: usuarios.id, nombre: usuarios.nombre }).from(usuarios),
   ]);
