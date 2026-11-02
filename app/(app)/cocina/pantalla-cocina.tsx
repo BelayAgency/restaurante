@@ -84,54 +84,48 @@ function origenDe(comanda: Comanda, salon: EstadoSalon, catalogo: Catalogo): Ori
 }
 
 /** Un renglón del ticket: cantidad y plato, y debajo, chico, lo que cambia cómo se prepara. */
-function FilaItemComanda({ item }: { item: ItemComanda }) {
+function FilaItemComanda({ item, accion }: { item: ItemComanda; accion?: ReactNode }) {
   return (
-    <li className="py-0.5">
-      <p className={cn('flex gap-2 text-sm font-medium leading-5', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>
-        <span className="min-w-5 shrink-0 font-bold tabular-nums">{item.cantidad}</span>
-        <span className="min-w-0">{item.nombre}</span>
-      </p>
-      {item.anulado ? <p className="pl-7 text-xs font-medium text-error">Anulado: no preparar</p> : null}
-      {item.modificadores.length ? <p className="pl-7 text-xs text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
-      {item.nota ? (
-        <p className="ml-7 mt-0.5 inline-flex items-start gap-1 rounded bg-alerta-tenue px-1.5 py-px text-xs font-medium text-alerta">
-          <MessageSquareText size={12} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
+    <li className="flex items-start gap-2 py-0.5">
+      <div className="min-w-0 flex-1">
+        <p className={cn('flex gap-2 text-sm font-medium leading-5', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>
+          <span className="min-w-5 shrink-0 font-bold tabular-nums">{item.cantidad}</span>
+          <span className="min-w-0">{item.nombre}</span>
         </p>
-      ) : null}
+        {item.anulado ? <p className="pl-7 text-xs font-medium text-error">Anulado: no preparar</p> : null}
+        {item.modificadores.length ? <p className="pl-7 text-xs text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
+        {item.nota ? (
+          <p className="ml-7 mt-0.5 inline-flex items-start gap-1 rounded bg-alerta-tenue px-1.5 py-px text-xs font-medium text-alerta">
+            <MessageSquareText size={12} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
+          </p>
+        ) : null}
+      </div>
+      {accion}
     </li>
   );
 }
 
-/** Lo que una estación tiene que sacar de esta mesa: su rótulo, su «Listo» propio si hay más de una, y los platos. */
-function BloqueComanda({
-  comanda,
-  estacion,
-  ocupado,
-  alTerminar,
-}: {
-  comanda: Comanda;
-  estacion: string | null;
-  ocupado: boolean;
-  alTerminar: (() => void) | null;
-}) {
+/**
+ * Lo que una estación tiene que sacar de esta mesa. El «Listo» va en el renglón del primer plato:
+ * se termina la comanda entera de esa estación, no un plato suelto.
+ */
+function BloqueComanda({ comanda, ocupado, alTerminar }: { comanda: Comanda; ocupado: boolean; alTerminar: (() => void) | null }) {
   return (
-    <section className="pt-1.5">
-      {estacion || alTerminar ? (
-        <div className="flex min-h-8 items-center justify-between gap-2 pl-3 pr-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-tinta-tenue">{estacion}</span>
-          {alTerminar ? (
-            <Boton tamano="sm" className="h-7 text-xs" disabled={ocupado} onClick={alTerminar}>
-              <Check size={14} strokeWidth={2} /> Listo
-            </Boton>
-          ) : null}
-        </div>
-      ) : null}
-      <ul className="px-3">
-        {comanda.items.map((item) => (
-          <FilaItemComanda key={item.id} item={item} />
-        ))}
-      </ul>
-    </section>
+    <ul className="px-3 pt-1.5 [&+&]:mt-1">
+      {comanda.items.map((item, i) => (
+        <FilaItemComanda
+          key={item.id}
+          item={item}
+          accion={
+            alTerminar && i === 0 ? (
+              <Boton tamano="sm" className="-my-1 h-7 text-xs" disabled={ocupado} onClick={alTerminar}>
+                <Check size={14} strokeWidth={2} /> Listo
+              </Boton>
+            ) : undefined
+          }
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -142,13 +136,11 @@ function BloqueComanda({
 function TarjetaMesa({
   comandas,
   origen,
-  nombreEstacion,
   ahora,
   operador,
 }: {
   comandas: Comanda[];
   origen: Origen;
-  nombreEstacion: (id: string) => string | null;
   ahora: number;
   operador: Operador;
 }) {
@@ -183,7 +175,6 @@ function TarjetaMesa({
           <BloqueComanda
             key={c.clave}
             comanda={c}
-            estacion={nombreEstacion(c.estacionId)}
             ocupado={ocupado}
             alTerminar={varias ? () => terminar([c]) : null}
           />
@@ -250,7 +241,6 @@ export function PantallaCocina() {
 
   const { catalogo } = datos;
   const operador: Operador = catalogo.operadores.find((o) => o.id === operadorId) ?? { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol };
-  const nombreEstacion = (id: string) => (estacion === TODAS ? (catalogo.estaciones.find((e) => e.id === id)?.nombre ?? null) : null);
 
   // Por mesa: las comandas de una misma cuenta van juntas, en la mesa que primero pidió.
   const porMesa = new Map<string, Comanda[]>();
@@ -291,7 +281,6 @@ export function PantallaCocina() {
               key={comandasDeMesa[0]!.cuentaId}
               comandas={comandasDeMesa}
               origen={origenDe(comandasDeMesa[0]!, salon, catalogo)}
-              nombreEstacion={nombreEstacion}
               ahora={ahora}
               operador={operador}
             />
