@@ -80,74 +80,55 @@ function origenDe(comanda: Comanda, salon: EstadoSalon, catalogo: Catalogo): { t
   return { titulo: cuenta.nombre ?? 'Mostrador', icono: <Store size={16} strokeWidth={1.75} />, mozo };
 }
 
+/** Un renglón del ticket: cantidad y plato, y debajo, chico, lo que cambia cómo se prepara. */
 function FilaItemComanda({ item }: { item: ItemComanda }) {
   return (
-    <li className="flex gap-3 border-b border-borde/60 py-2.5 last:border-0">
-      <span
-        className={cn(
-          'grid h-7 min-w-7 shrink-0 place-items-center rounded-md px-1.5 text-sm font-semibold tabular-nums',
-          item.anulado ? 'bg-error-tenue text-error' : 'bg-lienzo text-tinta',
-        )}
-      >
-        {item.cantidad}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={cn('text-base font-medium leading-7', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>{item.nombre}</p>
-        {item.anulado ? <p className="text-xs font-medium text-error">Anulado: no preparar</p> : null}
-        {item.modificadores.length ? (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {item.modificadores.map((m) => (
-              <span key={m} className="rounded-md bg-lienzo px-1.5 py-0.5 text-xs font-medium text-tinta-suave">
-                {m}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {item.nota ? (
-          <p className="mt-1.5 flex items-start gap-1.5 rounded-md bg-alerta-tenue px-2 py-1 text-sm text-alerta">
-            <MessageSquareText size={14} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
-          </p>
-        ) : null}
-      </div>
+    <li className="py-0.5">
+      <p className={cn('flex gap-1.5 text-sm leading-5', item.anulado ? 'text-tinta-tenue line-through' : 'text-tinta')}>
+        <span className="shrink-0 font-semibold tabular-nums">{item.cantidad} ×</span>
+        <span className="min-w-0 font-medium">{item.nombre}</span>
+      </p>
+      {item.anulado ? <p className="pl-6 text-xs font-medium text-error">Anulado: no preparar</p> : null}
+      {item.modificadores.length ? <p className="pl-6 text-xs text-tinta-suave">{item.modificadores.join(' · ')}</p> : null}
+      {item.nota ? (
+        <p className="ml-6 mt-0.5 flex items-start gap-1 rounded bg-alerta-tenue px-1.5 py-0.5 text-xs text-alerta">
+          <MessageSquareText size={12} strokeWidth={1.75} className="mt-0.5 shrink-0" /> {item.nota}
+        </p>
+      ) : null}
     </li>
   );
 }
 
-/** Una comanda dentro de la tarjeta de su mesa: su estación, cuándo entró, qué lleva y su «Listo». */
+/** Una comanda dentro del ticket de su mesa: estación, hora, tiempo y su «Listo» en una línea; abajo, los platos. */
 function BloqueComanda({ comanda, estacion, ahora, operador }: { comanda: Comanda; estacion: string | null; ahora: number; operador: Operador }) {
   const registrar = useRegistrar(operador);
   const [ocupado, iniciar] = useTransition();
   const urgencia = urgenciaDe(comanda, ahora);
-  const aPreparar = comanda.items.filter((i) => !i.anulado).reduce((s, i) => s + i.cantidad, 0);
   const terminar = () => iniciar(async () => void (await registrar('comanda_lista', comanda.cuentaId, { envioId: comanda.envioId, estacionId: comanda.estacionId })));
 
   return (
-    <section className="border-b border-borde px-4 py-3 last:border-0">
-      <p className="flex items-baseline gap-2 text-xs text-tinta-tenue">
-        {estacion ? <span className="font-medium text-tinta-suave">{estacion}</span> : null}
-        <span className="tabular-nums">Entró {hora(comanda.enviadaEn)}</span>
-        <span className={cn('ml-auto text-sm font-semibold tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</span>
-      </p>
-      <ul className="py-1">
+    // Corte punteado entre comandas, como un ticket.
+    <section className="border-b border-dashed border-borde-fuerte px-3 py-2 last:border-0">
+      <div className="flex items-center gap-2 text-xs text-tinta-tenue">
+        {estacion ? <span className="font-medium uppercase tracking-wide text-tinta-suave">{estacion}</span> : null}
+        <span className="tabular-nums">{hora(comanda.enviadaEn)}</span>
+        <span className={cn('whitespace-nowrap font-semibold tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(comanda.enviadaEn, ahora))}</span>
+        <Boton variante="primario" tamano="sm" className="ml-auto" disabled={ocupado} onClick={terminar}>
+          <CheckCheck size={14} strokeWidth={1.5} /> Listo
+        </Boton>
+      </div>
+      <ul className="mt-1">
         {comanda.items.map((item) => (
           <FilaItemComanda key={item.id} item={item} />
         ))}
       </ul>
-      <div className="flex items-center gap-2">
-        <span className="mr-auto text-xs text-tinta-tenue">
-          {aPreparar} {aPreparar === 1 ? 'plato' : 'platos'}
-        </span>
-        <Boton variante="primario" tamano="sm" disabled={ocupado} onClick={terminar}>
-          <CheckCheck size={14} strokeWidth={1.5} /> Listo
-        </Boton>
-      </div>
     </section>
   );
 }
 
 /**
- * Todo lo pendiente de una mesa en una sola tarjeta: la cocina ve qué sale junto. Cada comanda
- * (un envío a una estación) sigue con su propio «Listo», porque se termina por separado.
+ * El ticket de una mesa: todo lo pendiente junto, para que la cocina vea qué sale a la vez.
+ * Cada comanda (un envío a una estación) sigue con su propio «Listo», porque se termina por separado.
  */
 function TarjetaMesa({
   comandas,
@@ -169,20 +150,15 @@ function TarjetaMesa({
   return (
     // Borde visible: el encabezado pinta hasta el canto y, con el borde transparente de la tarjeta, se perdía el contorno.
     <article className="tarjeta flex flex-col overflow-hidden border-borde">
-      <header className={cn('flex items-start justify-between gap-3 border-b border-borde px-4 py-3', BANDA[urgencia])}>
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-lg font-semibold text-tinta">
-            <span className="text-tinta-tenue">{origen.icono}</span>
-            <span className="truncate">{origen.titulo}</span>
-          </p>
-          <p className="truncate text-xs text-tinta-suave">
-            {origen.mozo} · {comandas.length} {comandas.length === 1 ? 'comanda' : 'comandas'}
-          </p>
+      <header className={cn('border-b border-borde px-3 py-2', BANDA[urgencia])}>
+        <div className="flex items-center gap-2">
+          <span className="text-tinta-tenue">{origen.icono}</span>
+          <p className="min-w-0 flex-1 truncate text-base font-semibold text-tinta">{origen.titulo}</p>
+          <p className={cn('shrink-0 text-lg font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(primera.enviadaEn, ahora))}</p>
         </div>
-        <div className="shrink-0 text-right">
-          <p className={cn('text-2xl font-semibold leading-none tabular-nums', TIEMPO[urgencia])}>{duracionCorta(minutosDesde(primera.enviadaEn, ahora))}</p>
-          <p className="mt-1 text-xs tabular-nums text-tinta-tenue">Desde {hora(primera.enviadaEn)}</p>
-        </div>
+        <p className="truncate text-xs text-tinta-suave">
+          {origen.mozo} · desde {hora(primera.enviadaEn)}
+        </p>
       </header>
       {comandas.map((c) => (
         <BloqueComanda key={c.clave} comanda={c} estacion={nombreEstacion(c.estacionId)} ahora={ahora} operador={operador} />
@@ -199,7 +175,8 @@ function Carril({ titulo, cantidad, vacio, children }: { titulo: string; cantida
         <span className="rounded-md bg-lienzo px-1.5 text-xs tabular-nums text-tinta-tenue">{cantidad}</span>
       </h2>
       {cantidad ? (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]">{children}</div>
+        // Tickets angostos y cada uno de su alto: en una fila no se estiran al más largo.
+        <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))]">{children}</div>
       ) : (
         <p className="rounded-xl border border-dashed border-borde px-4 py-6 text-center text-sm text-tinta-tenue">{vacio}</p>
       )}
