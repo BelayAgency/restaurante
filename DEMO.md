@@ -1,6 +1,7 @@
 # Demo en Vercel (rama `demo-vercel`)
 
-Demo pública con datos de prueba (octubre 2026: cajas, mesas, cobros, compras). No es
+Demo pública con datos de prueba: cuatro semanas de cajas, mesas, cobros y compras que terminan
+el día anterior al deploy (el armado corre las fechas), así el mes en curso nunca está vacío. No es
 producción: producción es `main`, que despliega el panel de Belay en su servidor.
 
 ## Entrar
